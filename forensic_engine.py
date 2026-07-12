@@ -2246,15 +2246,24 @@ class ForensicEngine:
 # ---------- Callback ----------
 def send_callback(url: str, secret: str, payload: dict):
     """POST the result payload to the callback URL (Supabase receive-results function).
+    If CALLBACK_AUTH env var is set, includes Authorization: Bearer <token>.
     Uses only stdlib so no extra dependencies are required in the runner image."""
     data = json.dumps(payload, default=str).encode('utf-8')
-    req  = urllib.request.Request(
+    
+    headers = {
+        'Content-Type':      'application/json',
+        'x-callback-secret': secret,
+    }
+    
+    # Add Authorization header if CALLBACK_AUTH is available
+    callback_auth = os.getenv('CALLBACK_AUTH')
+    if callback_auth:
+        headers['Authorization'] = f'Bearer {callback_auth}'
+    
+    req = urllib.request.Request(
         url,
         data    = data,
-        headers = {
-            'Content-Type':      'application/json',
-            'x-callback-secret': secret,
-        },
+        headers = headers,
         method  = 'POST',
     )
     try:
@@ -2265,8 +2274,7 @@ def send_callback(url: str, secret: str, payload: dict):
         sys.exit(1)
     except Exception as e:
         print(f"[callback] Failed: {e}", file=sys.stderr)
-        sys.exit(0)
-
+        sys.exit(1)
 
 # ---------- Known-hash loader ----------
 def load_known_hashes(path: Optional[str]) -> set:
