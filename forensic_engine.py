@@ -2245,35 +2245,43 @@ class ForensicEngine:
 
 # ---------- Callback ----------
 def send_callback(url: str, secret: str, payload: dict):
-    """POST the result payload to the callback URL (Supabase receive-results function).
-    If CALLBACK_AUTH env var is set, includes Authorization: Bearer <token>.
-    Uses only stdlib so no extra dependencies are required in the runner image."""
+    """POST the result payload to the callback URL (Supabase receive-results function)."""
     data = json.dumps(payload, default=str).encode('utf-8')
-    
+
     headers = {
         'Content-Type':      'application/json',
         'x-callback-secret': secret,
+        # Default urllib UA ("Python-urllib/3.x") is a known bot signature that
+        # Cloudflare / Supabase's edge WAF frequently blocks silently (403/dropped).
+        'User-Agent':        'forensic-engine/8.0 (+github-actions)',
+        'Accept':            'application/json',
     }
-    
-    # Add Authorization header if CALLBACK_AUTH is available
+
     callback_auth = os.getenv('CALLBACK_AUTH')
     if callback_auth:
         headers['Authorization'] = f'Bearer {callback_auth}'
-    
-    req = urllib.request.Request(
-        url,
-        data    = data,
-        headers = headers,
-        method  = 'POST',
-    )
+
+    req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            print(f"[callback] HTTP {resp.status}", file=sys.stderr)
+        # Cold-start Edge Functions + a multi-KB JSON payload can take longer than 30s.
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            resp_body = resp.read().decode('utf-8', errors='replace')
+            print(f"[callback] HTTP {resp.status}: {resp_body[:500]}", file=sys.stderr)
     except urllib.error.HTTPError as e:
-        print(f"[callback] HTTP error {e.code}: {e.reason}", file=sys.stderr)
+        # Read the body — this is where the *real* reason usually is
+        # (e.g. Supabase's own JSON error, or a Cloudflare HTML challenge page).
+        try:
+            err_body = e.read().decode('utf-8', errors='replace')
+        except Exception:
+            err_body = '<no body>'
+        print(f"[callback] HTTP error {e.code}: {e.reason}\nBody: {err_body[:1000]}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"[callback] URL/connection error: {e.reason}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        print(f"[callback] Failed: {e}", file=sys.stderr)
+        print(f"[callback] Failed: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(1)
 
 # ---------- Known-hash loader ----------
