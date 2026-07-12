@@ -2276,10 +2276,10 @@ def send_callback(url: str, secret: str, payload: dict):
         except Exception:
             err_body = '<no body>'
         print(f"[callback] HTTP error {e.code}: {e.reason}\nBody: {err_body[:1000]}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
     except urllib.error.URLError as e:
         print(f"[callback] URL/connection error: {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
     except Exception as e:
         print(f"[callback] Failed: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(0)
