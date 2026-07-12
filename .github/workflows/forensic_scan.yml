@@ -1,0 +1,167 @@
+name: Forensic Scan
+
+# Triggered exclusively by the Supabase submit-scan edge function.
+# Human callers should go through the edge function, not this workflow directly.
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: 'User ID (from Supabase auth)'
+        required: true
+        type: string
+      report_id:
+        description: 'forensic_reports row UUID'
+        required: true
+        type: string
+      file_url:
+        description: 'Signed Supabase Storage URL (1-hour expiry)'
+        required: true
+        type: string
+      file_name:
+        description: 'Original filename (used to infer extension)'
+        required: true
+        type: string
+      mode:
+        description: 'Scan depth'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - light   # fast triage — skips OCR + clone detection
+          - full    # everything
+
+jobs:
+  scan:
+    name: "Scan ${{ github.event.inputs.file_name }} (${{ github.event.inputs.mode }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── 1. Source ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Python ──────────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Tesseract OCR system package (needed by pytesseract)
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            tesseract-ocr \
+            poppler-utils \
+            libmagic1
+
+      # ── 3. Mark the report as "processing" ────────────────────────────────
+      # We do this early so the UI can show a spinner immediately.
+      - name: Mark report as processing
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          REPORT_ID: ${{ github.event.inputs.report_id }}
+        run: |
+          curl -s -X PATCH \
+            "${SUPABASE_URL}/rest/v1/forensic_reports?id=eq.${REPORT_ID}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{"status": "processing"}'
+
+      # ── 4. Download the file from Supabase Storage ─────────────────────────
+      - name: Download file
+        run: |
+          # Preserve the original extension so mime-detection falls back
+          # to extension sniffing if python-magic is unavailable.
+          EXT="${{ github.event.inputs.file_name }}"
+          EXT="${EXT##*.}"
+          curl -fsSL \
+            "${{ github.event.inputs.file_url }}" \
+            -o "scan_target.${EXT}"
+          echo "SCAN_FILE=scan_target.${EXT}" >> "$GITHUB_ENV"
+          echo "Downloaded $(wc -c < scan_target.${EXT}) bytes"
+
+      # ── 5. Run the forensic engine ─────────────────────────────────────────
+      # The engine writes JSON to scan_report.json AND posts to the callback.
+      # Even if the callback fails (exit 1), the artifact is still uploaded.
+      - name: Run forensic engine
+        env:
+          CALLBACK_URL: ${{ secrets.SUPABASE_CALLBACK_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+        run: |
+          python forensic_engine.py "$SCAN_FILE" \
+            --report-id   "${{ github.event.inputs.report_id }}" \
+            --user-id     "${{ github.event.inputs.user_id }}" \
+            --mode        "${{ github.event.inputs.mode }}" \
+            --callback-url    "$CALLBACK_URL" \
+            --callback-secret "$CALLBACK_SECRET" \
+            --output scan_report.json \
+            --pretty \
+            -v
+
+      # ── 6. Persist the raw JSON as a workflow artifact ─────────────────────
+      # This is the safety net: even if the callback network call fails, the
+      # data is here for manual retrieval.
+      - name: Upload report artifact
+        if: always()   # run even if the engine step failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: "forensic-report-${{ github.event.inputs.report_id }}"
+          path: scan_report.json
+          retention-days: 90
+
+      # ── 7. Mark as failed on error ─────────────────────────────────────────
+      # If the engine step above exited non-zero (i.e. it couldn't even reach
+      # the callback), we still want the DB row updated so the UI doesn't
+      # spin forever.
+      - name: Mark report as failed (on engine error)
+        if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          REPORT_ID: ${{ github.event.inputs.report_id }}
+        run: |
+          curl -s -X PATCH \
+            "${SUPABASE_URL}/rest/v1/forensic_reports?id=eq.${REPORT_ID}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "{\"status\": \"failed\", \"error_message\": \"Engine process failed — see workflow run ${{ github.run_id }} artifacts\", \"completed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+
+      # ── 8. Job summary ─────────────────────────────────────────────────────
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## 🔬 Forensic Scan Complete"
+            echo ""
+            echo "| Field       | Value |"
+            echo "|-------------|-------|"
+            echo "| File        | \`${{ github.event.inputs.file_name }}\` |"
+            echo "| Report ID   | \`${{ github.event.inputs.report_id }}\` |"
+            echo "| User ID     | \`${{ github.event.inputs.user_id }}\` |"
+            echo "| Mode        | ${{ github.event.inputs.mode }} |"
+            echo "| Run ID      | ${{ github.run_id }} |"
+
+            if [ -f scan_report.json ]; then
+              RISK_LEVEL=$(python3 -c "import json,sys; d=json.load(open('scan_report.json')); print(d.get('risk_assessment',{}).get('risk_level','unknown'))")
+              RISK_SCORE=$(python3 -c "import json,sys; d=json.load(open('scan_report.json')); print(d.get('risk_assessment',{}).get('risk_score','?'))")
+              SUMMARY=$(python3 -c "import json,sys; d=json.load(open('scan_report.json')); print(d.get('risk_assessment',{}).get('explanation_summary',''))")
+              echo "| Risk Level  | **${RISK_LEVEL}** |"
+              echo "| Risk Score  | ${RISK_SCORE}/100 |"
+              echo ""
+              echo "### Summary"
+              echo "${SUMMARY}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
