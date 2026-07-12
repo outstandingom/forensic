@@ -88,48 +88,24 @@ jobs:
           echo "SCAN_FILE=scan_target.${EXT}" >> "$GITHUB_ENV"
           echo "Downloaded $(wc -c < scan_target.${EXT}) bytes"
 
-      # ── 5. Run the forensic engine (NO callback) ──────────────────────────
-      # The engine writes JSON to scan_report.json. It no longer sends the
-      # callback itself – we do it in the next step with proper auth headers.
+      # ── 5. Run the forensic engine (sends callback itself) ────────────────
       - name: Run forensic engine
+        env:
+          CALLBACK_URL: ${{ secrets.SUPABASE_CALLBACK_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+          CALLBACK_AUTH: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}   # used by engine for Authorization header
         run: |
           python forensic_engine.py "$SCAN_FILE" \
             --report-id   "${{ github.event.inputs.report_id }}" \
             --user-id     "${{ github.event.inputs.user_id }}" \
             --mode        "${{ github.event.inputs.mode }}" \
+            --callback-url    "$CALLBACK_URL" \
+            --callback-secret "$CALLBACK_SECRET" \
             --output scan_report.json \
             --pretty \
             -v
 
-      # ── 6. Send report to Supabase callback ───────────────────────────────
-      - name: Send report to Supabase callback
-        if: success()   # only if engine succeeded
-        env:
-          CALLBACK_URL: ${{ secrets.SUPABASE_CALLBACK_URL }}
-          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          REPORT_ID: ${{ github.event.inputs.report_id }}
-        run: |
-          # Construct payload: {"report_id": "...", "report": <JSON from file>}
-          PAYLOAD=$(jq -n \
-            --arg id "$REPORT_ID" \
-            --slurpfile report scan_report.json \
-            '{report_id: $id, report: $report[0]}')
-
-          RESPONSE=$(curl -s -w "%{http_code}" -X POST "$CALLBACK_URL" \
-            -H "Content-Type: application/json" \
-            -H "x-callback-secret: $CALLBACK_SECRET" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-            -d "$PAYLOAD")
-
-          HTTP_CODE="${RESPONSE: -3}"
-          echo "Callback HTTP status: $HTTP_CODE"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "Callback failed! Status: $HTTP_CODE"
-            exit 1
-          fi
-
-      # ── 7. Persist the raw JSON as a workflow artifact ─────────────────────
+      # ── 6. Persist the raw JSON as a workflow artifact ─────────────────────
       - name: Upload report artifact
         if: always()   # run even if the engine or callback step failed
         uses: actions/upload-artifact@v4
@@ -138,7 +114,7 @@ jobs:
           path: scan_report.json
           retention-days: 90
 
-      # ── 8. Mark as failed on error ─────────────────────────────────────────
+      # ── 7. Mark as failed on error ─────────────────────────────────────────
       - name: Mark report as failed (on engine or callback error)
         if: failure()
         env:
@@ -154,7 +130,7 @@ jobs:
             -H "Prefer: return=minimal" \
             -d "{\"status\": \"failed\", \"error_message\": \"Engine or callback failed — see workflow run ${{ github.run_id }} artifacts\", \"completed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
 
-      # ── 9. Job summary ─────────────────────────────────────────────────────
+      # ── 8. Job summary ─────────────────────────────────────────────────────
       - name: Write job summary
         if: always()
         run: |
