@@ -1,0 +1,25 @@
+# Forensic Engine v8 — Python dependencies
+# Install with: pip install -r requirements.txt
+
+# Core image processing
+Pillow>=10.0.0
+imagehash>=4.3.0
+
+# Computer vision (headless build — no GUI deps on CI)
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+
+# PDF processing
+pypdf>=3.0.0
+pdfminer.six>=20221105
+pdf2image>=1.16.3       # requires system poppler-utils
+
+# EXIF / file-type detection
+exifread>=3.0.0
+python-magic>=0.4.27    # requires system libmagic1
+
+# OCR  (requires system tesseract-ocr)
+pytesseract>=0.3.10
+
+# Signal processing — used by v8 extractors
+scipy>=1.11.0
