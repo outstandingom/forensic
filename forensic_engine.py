@@ -2282,7 +2282,7 @@ def send_callback(url: str, secret: str, payload: dict):
         sys.exit(1)
     except Exception as e:
         print(f"[callback] Failed: {type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
 # ---------- Known-hash loader ----------
 def load_known_hashes(path: Optional[str]) -> set:
