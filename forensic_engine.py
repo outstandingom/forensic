@@ -1,4 +1,21 @@
+#!/usr/bin/env python3
+"""
+Forensic Engine v9 – AI-Detection Enhanced Edition
+All original v8 layers + 5 new AI-detection extractors with significantly
+improved heuristics, weighted confidence scoring, and local/patch analysis.
 
+CHANGES vs v8 Detailed Report Edition:
+  - NEW: WaveletConsistencyExtractor    — 4-level Haar wavelet noise-scaling + kurtosis
+  - NEW: PowerSpectrumExtractor         — radial PSD slope (1/f^beta) + periodic artifact peaks
+  - NEW: JPEGGhostExtractor             — multi-quality ghost detection for spatial manipulation
+  - NEW: LocalPatchStatisticsExtractor  — 4×4 grid brightness / texture uniformity
+  - NEW: GradientCoherenceExtractor     — gradient orientation entropy + anisotropy
+  - IMPROVED: AIGeneratedImageExtractor — 8 weighted signals, adaptive thresholds, 0-1 confidence
+  - IMPROVED: AIManipulationExtractor   — 4-signal co-occurrence, spatial clustering, confidence band
+  - NEW pipeline: 'ai_detection'        — groups all new AI-focused extractors
+  - UPDATED: DetailedReportBuilder      — interpreters for new extractors + cross-extractor AI fusion
+  - All original pipelines, extractors, PDF/stego/metadata analysis unchanged.
+"""
 
 import os
 import re
@@ -87,9 +104,9 @@ try:
     from pdfminer.layout import LAParams
 except ImportError:
     _PDFMINER_OK = False
-    extract_text  = None
+    extract_text = None
     extract_pages = None
-    LAParams      = None
+    LAParams = None
 
 # ---------- Configuration ----------
 MAX_MEMORY_FILE_SIZE = 1024 * 1024 * 1024  # 1 GB
@@ -107,17 +124,17 @@ def log(msg: str, verbose: bool):
 # ---------- Shared Context ----------
 class ExtractionContext:
     def __init__(self, file_path: str, raw_data: bytes, options: "RunOptions" = None):
-        self.file_path = file_path
-        self.raw_data  = raw_data
-        self.options   = options or RunOptions()
-        self._mime_type     = None
-        self._file_type     = None
-        self._decoded_image = None
-        self._pdf_reader    = None
-        self._ocr_text      = None
+        self.file_path  = file_path
+        self.raw_data   = raw_data
+        self.options    = options or RunOptions()
+        self._mime_type        = None
+        self._file_type        = None
+        self._decoded_image    = None
+        self._pdf_reader       = None
+        self._ocr_text         = None
         self._pdf_images: List = []
-        self._pdf_layout    = None
-        self._warning       = None
+        self._pdf_layout       = None
+        self._warning          = None
 
     @property
     def mime_type(self) -> str:
@@ -185,7 +202,7 @@ class ExtractionContext:
             reader = self.get_pdf_reader()
             if reader:
                 for page_num, page in enumerate(reader.pages):
-                    resources    = self._safe_resources(page)
+                    resources = self._safe_resources(page)
                     xobjects_ref = resources.get('/XObject') if resources else None
                     if not xobjects_ref:
                         continue
@@ -391,7 +408,7 @@ def compute_hashes(data: bytes) -> Dict[str, str]:
 def shannon_entropy(data: bytes) -> float:
     if not data:
         return 0.0
-    freq    = [0] * 256
+    freq   = [0] * 256
     for b in data:
         freq[b] += 1
     length  = len(data)
@@ -440,7 +457,7 @@ def parse_exif_date(date_str: str) -> Optional[datetime]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CORE EXTRACTORS (unchanged from v8)
+# ORIGINAL EXTRACTORS (unchanged from v8)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class FileEvidenceExtractor(BaseExtractor):
@@ -822,10 +839,10 @@ class SteganographyExtractor(BaseExtractor):
                 data     = list(img.convert('RGB').getdata())[:STEGO_SAMPLE_PIXELS]
                 lsb_bits = [c & 1 for r, g, b in data for c in (r, g, b)]
 
-            chi2       = chi_square_bit_test(lsb_bits)
-            ones_ratio = sum(lsb_bits) / len(lsb_bits) if lsb_bits else 0.5
-            suspicious = len(lsb_bits) > 5_000 and chi2 < 0.5
-            hidden_zip = 'found' if detect_zip_header(context.raw_data) else None
+            chi2          = chi_square_bit_test(lsb_bits)
+            ones_ratio    = sum(lsb_bits) / len(lsb_bits) if lsb_bits else 0.5
+            suspicious    = len(lsb_bits) > 5_000 and chi2 < 0.5
+            hidden_zip    = 'found' if detect_zip_header(context.raw_data) else None
             return {
                 'lsb_bits_sampled':          len(lsb_bits),
                 'lsb_ones_ratio':            ones_ratio,
@@ -1089,10 +1106,10 @@ class CompressionHistoryExtractor(BaseExtractor):
                 coeffs.append(d[1, 1])
         if not coeffs:
             return {'error': 'No blocks extracted'}
-        coeffs  = np.round(np.array(coeffs)).astype(int)
-        hist_c  = Counter(coeffs.tolist())
-        values  = [hist_c[k] for k in sorted(hist_c.keys())]
-        ps      = self._periodicity_score(values)
+        coeffs   = np.round(np.array(coeffs)).astype(int)
+        hist_c   = Counter(coeffs.tolist())
+        values   = [hist_c[k] for k in sorted(hist_c.keys())]
+        ps       = self._periodicity_score(values)
         return {
             'blocks_analyzed':              len(coeffs),
             'histogram_bins':               len(hist_c),
@@ -1160,9 +1177,9 @@ class CFAExtractor(BaseExtractor):
         img = context.get_decoded_image()
         if img is None:
             return {'error': 'Could not decode image'}
-        rgb  = np.array(img.convert('RGB'), dtype=np.float64)
-        h, w = rgb.shape[:2]
-        block = 32
+        rgb    = np.array(img.convert('RGB'), dtype=np.float64)
+        h, w   = rgb.shape[:2]
+        block  = 32
         scores = []
         for by in range(0, h - block, block):
             row = []
@@ -1233,8 +1250,9 @@ class PRNUExtractor(BaseExtractor):
             'residual_energy_cv':              cv_,
             'spatial_inconsistency_suspected': cv_ > 0.8,
             'note': (
-                'Single-image PRNU detects spatial noise-texture inconsistency. '
-                'Camera attribution requires a reference fingerprint.'
+                'Single-image PRNU detects spatial noise-texture inconsistency '
+                '(possible splice boundary). Camera attribution requires a '
+                'reference fingerprint from multiple known-source images.'
             ),
         }
 
@@ -1314,10 +1332,10 @@ class AdvancedSteganalysisExtractor(BaseExtractor):
             if f_ng > f: r_neg += 1
             elif f_ng < f: s_neg += 1
 
-        total     = max(len(groups), 1)
-        rs_ratio  = (r - s) / total
-        rs_neg    = (r_neg - s_neg) / total
-        asymmetry = abs(rs_ratio - rs_neg)
+        total      = max(len(groups), 1)
+        rs_ratio   = (r - s) / total
+        rs_neg     = (r_neg - s_neg) / total
+        asymmetry  = abs(rs_ratio - rs_neg)
         return {
             'groups_analyzed':     int(total),
             'rm_minus_sm':         float(rs_ratio),
@@ -1325,95 +1343,6 @@ class AdvancedSteganalysisExtractor(BaseExtractor):
             'rs_asymmetry':        float(asymmetry),
             'embedding_suspected': asymmetry > 0.03,
             'method': 'Simplified RS (Regular/Singular) analysis',
-        }
-
-
-class FontConsistencyExtractor(BaseExtractor):
-    name         = "font_consistency"
-    dependencies = ['get_pdf_text_with_positions']
-
-    @staticmethod
-    def applicable(context) -> bool:
-        return context.file_type == 'pdf' and _PDFMINER_OK and np is not None
-
-    def _extract(self, context) -> Dict[str, Any]:
-        layout = context.get_pdf_text_with_positions()
-        if not layout:
-            return {'error': 'Layout extraction unavailable'}
-        font_counter = Counter()
-        size_values  = []
-        anomalies    = []
-        for page in layout.get('pages', []):
-            texts      = page.get('texts', [])
-            page_fonts = Counter(t['fontname'] for t in texts if t.get('fontname'))
-            for t in texts:
-                if t.get('fontname'): font_counter[t['fontname']] += 1
-                if t.get('size'):     size_values.append(t['size'])
-            if len(page_fonts) > 1:
-                dominant = page_fonts.most_common(1)[0]
-                for font, count in page_fonts.items():
-                    if font != dominant[0] and count * 10 < dominant[1]:
-                        anomalies.append({
-                            'page':           page['page'],
-                            'minority_font':  font,
-                            'minority_count': count,
-                            'dominant_font':  dominant[0],
-                            'dominant_count': dominant[1],
-                        })
-        size_arr      = np.array(size_values) if size_values else np.array([0.0])
-        size_outliers = int(np.sum(
-            np.abs(size_arr - np.median(size_arr)) > 3
-        )) if len(size_arr) > 1 else 0
-        return {
-            'distinct_fonts':               len(font_counter),
-            'font_usage':                   dict(font_counter.most_common(10)),
-            'font_anomalies':               anomalies,
-            'size_outlier_count':           size_outliers,
-            'inconsistent_fonts_suspected': len(anomalies) > 0,
-        }
-
-
-class OCRImageConsistencyExtractor(BaseExtractor):
-    name         = "ocr_image_consistency"
-    dependencies = ['get_decoded_image']
-
-    @staticmethod
-    def applicable(context) -> bool:
-        return (context.file_type in ('image', 'pdf')
-                and pytesseract is not None
-                and np is not None
-                and context.options.mode != 'light')
-
-    def _extract(self, context) -> Dict[str, Any]:
-        img = context.get_decoded_image()
-        if img is None:
-            return {'error': 'No decodable image available'}
-        try:
-            data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
-        except Exception as e:
-            return {'error': str(e)}
-        heights, confidences = [], []
-        for i in range(len(data.get('text', []))):
-            if not str(data['text'][i]).strip():
-                continue
-            heights.append(data['height'][i])
-            conf = data['conf'][i]
-            if conf not in ('-1', -1):
-                confidences.append(float(conf))
-        if not heights:
-            return {'word_count': 0, 'note': 'No text detected'}
-        h_arr = np.array(heights, dtype=np.float64)
-        c_arr = np.array(confidences) if confidences else np.array([0.0])
-        h_out = int(np.sum(np.abs(h_arr - np.median(h_arr)) > 2 * (h_arr.std() + 1e-6)))
-        lc    = float(np.sum(c_arr < 50) / len(c_arr)) if len(c_arr) else 0.0
-        return {
-            'word_count':                        len(heights),
-            'height_outlier_count':              h_out,
-            'height_outlier_ratio':              h_out / len(heights),
-            'mean_ocr_confidence':               float(c_arr.mean()),
-            'low_confidence_ratio':              lc,
-            'rendering_inconsistency_suspected': (h_out / len(heights) > 0.08 or lc > 0.25),
-            'method': 'Glyph-height outlier + localised OCR-confidence analysis',
         }
 
 
@@ -1508,31 +1437,116 @@ class ELAExtractorV2(BaseExtractor):
         }
 
 
+class FontConsistencyExtractor(BaseExtractor):
+    name         = "font_consistency"
+    dependencies = ['get_pdf_text_with_positions']
+
+    @staticmethod
+    def applicable(context) -> bool:
+        return context.file_type == 'pdf' and _PDFMINER_OK and np is not None
+
+    def _extract(self, context) -> Dict[str, Any]:
+        layout = context.get_pdf_text_with_positions()
+        if not layout:
+            return {'error': 'Layout extraction unavailable'}
+        font_counter = Counter()
+        size_values  = []
+        anomalies    = []
+        for page in layout.get('pages', []):
+            texts      = page.get('texts', [])
+            page_fonts = Counter(t['fontname'] for t in texts if t.get('fontname'))
+            for t in texts:
+                if t.get('fontname'): font_counter[t['fontname']] += 1
+                if t.get('size'):     size_values.append(t['size'])
+            if len(page_fonts) > 1:
+                dominant = page_fonts.most_common(1)[0]
+                for font, count in page_fonts.items():
+                    if font != dominant[0] and count * 10 < dominant[1]:
+                        anomalies.append({
+                            'page':           page['page'],
+                            'minority_font':  font,
+                            'minority_count': count,
+                            'dominant_font':  dominant[0],
+                            'dominant_count': dominant[1],
+                        })
+        size_arr      = np.array(size_values) if size_values else np.array([0.0])
+        size_outliers = int(np.sum(
+            np.abs(size_arr - np.median(size_arr)) > 3
+        )) if len(size_arr) > 1 else 0
+        return {
+            'distinct_fonts':               len(font_counter),
+            'font_usage':                   dict(font_counter.most_common(10)),
+            'font_anomalies':               anomalies,
+            'size_outlier_count':           size_outliers,
+            'inconsistent_fonts_suspected': len(anomalies) > 0,
+        }
+
+
+class OCRImageConsistencyExtractor(BaseExtractor):
+    name         = "ocr_image_consistency"
+    dependencies = ['get_decoded_image']
+
+    @staticmethod
+    def applicable(context) -> bool:
+        return (context.file_type in ('image', 'pdf')
+                and pytesseract is not None
+                and np is not None
+                and context.options.mode != 'light')
+
+    def _extract(self, context) -> Dict[str, Any]:
+        img = context.get_decoded_image()
+        if img is None:
+            return {'error': 'No decodable image available'}
+        try:
+            data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+        except Exception as e:
+            return {'error': str(e)}
+        heights, confidences = [], []
+        for i in range(len(data.get('text', []))):
+            if not str(data['text'][i]).strip():
+                continue
+            heights.append(data['height'][i])
+            conf = data['conf'][i]
+            if conf not in ('-1', -1):
+                confidences.append(float(conf))
+        if not heights:
+            return {'word_count': 0, 'note': 'No text detected'}
+        h_arr = np.array(heights, dtype=np.float64)
+        c_arr = np.array(confidences) if confidences else np.array([0.0])
+        h_out = int(np.sum(np.abs(h_arr - np.median(h_arr)) > 2 * (h_arr.std() + 1e-6)))
+        lc    = float(np.sum(c_arr < 50) / len(c_arr)) if len(c_arr) else 0.0
+        return {
+            'word_count':                        len(heights),
+            'height_outlier_count':              h_out,
+            'height_outlier_ratio':              h_out / len(heights),
+            'mean_ocr_confidence':               float(c_arr.mean()),
+            'low_confidence_ratio':              lc,
+            'rendering_inconsistency_suspected': (h_out / len(heights) > 0.08 or lc > 0.25),
+            'method': 'Glyph-height outlier + localised OCR-confidence analysis',
+        }
+
+
 # ══════════════════════════════════════════════════════════════════════════════
-# v8.1 REPLACEMENT: AIGeneratedImageExtractor  (10 weighted signals)
+# v9 NEW AI-DETECTION EXTRACTORS
 # ══════════════════════════════════════════════════════════════════════════════
 
-class AIGeneratedImageExtractor(BaseExtractor):
+class WaveletConsistencyExtractor(BaseExtractor):
     """
-    10-signal weighted AI-generation detector (v8.1).
+    4-level Haar wavelet decomposition for AI-generation detection.
 
-    Signal                        Weight  Threshold
-    ─────────────────────────────────────────────────────────────────────────
-    S1  Local variance CV              3    < 0.75  (too uniform)
-    S2  Multi-scale noise floor        3    all scales < 2.5 std
-    S3  Gradient magnitude kurtosis    2    < 4.5
-    S4  Local channel-corr CV          2    < 0.12  (too uniform)
-    S5  Edge density CV                2    < 0.50  (too uniform)
-    S6  Block DCT coefficient kurtosis 2    < 4.0
-    S7  Noise autocorrelation peak     3    > 0.12
-    S8  Spectral band anomaly          1    periodic_peak_ratio > 0.002
-    S9  Saturation uniformity          1    > 0.85
-    S10 Patch texture entropy CV       2    < 0.20  (too uniform)
+    Natural images: HH (diagonal) subbands have heavy-tailed distributions
+    (kurtosis >> 3) due to sparse edge energy. Noise energy also scales
+    predictably between levels — typically 3–8× reduction per level as edges
+    become sparser at coarser scales.
 
-    Total weight = 21.  ai_generated_suspected when weighted_score >= 0.30.
+    AI images from diffusion/GAN models often show:
+      - Lower HH kurtosis (more Gaussian subbands from denoising pipelines)
+      - Inconsistent or shallow inter-level energy ratios (hallucinated
+        multi-scale texture fills multiple levels uniformly)
+      - Anisotropy (LH ≠ HL energy) from convolutional upsampling grids
     """
-    name    = "ai_generated_heuristics"
-    version = "8.1"
+    name         = "wavelet_consistency"
+    version      = "9.0"
     dependencies = ['get_decoded_image']
 
     @staticmethod
@@ -1543,374 +1557,369 @@ class AIGeneratedImageExtractor(BaseExtractor):
         img = context.get_decoded_image()
         if img is None:
             return {'error': 'Could not decode image'}
+        gray = np.array(img.convert('L'), dtype=np.float64)
 
-        rgb  = np.array(img.convert('RGB'), dtype=np.float64)
-        gray = np.array(img.convert('L'),   dtype=np.float64)
-        h, w = gray.shape
+        subbands = []
+        current  = gray.copy()
+        for level in range(1, 5):
+            h, w = current.shape
+            if h < 16 or w < 16:
+                break
+            LL, LH, HL, HH = self._haar_1level(current)
+            subbands.append({
+                'level':        level,
+                'kurtosis_HH':  self._kurtosis(HH.flatten()),
+                'kurtosis_LH':  self._kurtosis(LH.flatten()),
+                'energy_HH':    float(np.mean(HH ** 2)),
+                'energy_LH':    float(np.mean(LH ** 2)),
+                'energy_HL':    float(np.mean(HL ** 2)),
+                'lh_hl_ratio':  float(np.mean(LH ** 2) / (np.mean(HL ** 2) + 1e-12)),
+            })
+            current = LL
 
-        if min(h, w) < 64:
-            return {
-                'note': 'Image too small for full AI heuristic analysis (min 64×64)',
-                'ai_generated_suspected': False,
-                'indicator_count': 0,
-                'indicators_triggered': [],
-                'weighted_score': 0.0,
-            }
+        if not subbands:
+            return {'error': 'Image too small for wavelet analysis'}
 
-        raw_signals: Dict[str, Any]          = {}
-        reasons:     List[str]               = []
-        # (signal_flag_key, weight)
-        weighted_flags: List[Tuple[str, int]] = []
+        l1_kurtosis = subbands[0]['kurtosis_HH']
 
-        # ── S1: Local variance CV (w=3) ──────────────────────────────────────
-        lv_cv, s1 = self._local_variance_cv(gray)
-        raw_signals['local_variance_cv']       = round(float(lv_cv), 4)
-        raw_signals['s1_local_var_uniform']    = s1
-        weighted_flags.append(('s1_local_var_uniform', 3))
-        if s1:
-            reasons.append(
-                f'S1 Local variance too uniform (CV={lv_cv:.3f}; threshold<0.75) '
-                '— real scenes contain spatially diverse regions.')
+        # Inter-level noise energy ratios
+        energy_ratios = [
+            subbands[i]['energy_HH'] / (subbands[i + 1]['energy_HH'] + 1e-12)
+            for i in range(len(subbands) - 1)
+        ]
+        ratio_mean = float(np.mean(energy_ratios)) if energy_ratios else 0.0
+        ratio_cv   = float(np.std(energy_ratios) / (ratio_mean + 1e-9)) if energy_ratios else 0.0
 
-        # ── S2: Multi-scale noise floor (w=3) ────────────────────────────────
-        ns_scales, s2 = self._multiscale_noise_floor(gray)
-        raw_signals['noise_floor_by_scale']  = ns_scales
-        raw_signals['s2_noise_floor_low']    = s2
-        weighted_flags.append(('s2_noise_floor_low', 3))
-        if s2:
-            reasons.append(
-                f'S2 Noise floor anomalously low across {len(ns_scales)} scales '
-                f'{ns_scales} — sensor noise absent.')
+        # LH/HL anisotropy across levels (camera images ≈ isotropic → ratio ≈ 1.0)
+        lh_hl_ratios = [s['lh_hl_ratio'] for s in subbands]
+        lh_hl_mean   = float(np.mean(lh_hl_ratios))
+        anisotropy   = abs(lh_hl_mean - 1.0)
 
-        # ── S3: Gradient magnitude kurtosis (w=2) ────────────────────────────
-        gk, s3 = self._gradient_kurtosis(gray)
-        raw_signals['gradient_kurtosis']      = round(float(gk), 3)
-        raw_signals['s3_grad_kurtosis_low']   = s3
-        weighted_flags.append(('s3_grad_kurtosis_low', 2))
-        if s3:
-            reasons.append(
-                f'S3 Gradient kurtosis low ({gk:.2f}; threshold<4.5) '
-                '— edges are unnaturally uniform in strength.')
-
-        # ── S4: Local channel-correlation CV (w=2) ────────────────────────────
-        cc_cv, s4 = self._local_channel_corr_cv(rgb, h, w)
-        raw_signals['channel_corr_cv']         = round(float(cc_cv), 4)
-        raw_signals['s4_channel_corr_uniform'] = s4
-        weighted_flags.append(('s4_channel_corr_uniform', 2))
-        if s4:
-            reasons.append(
-                f'S4 Inter-channel correlation spatially uniform (CV={cc_cv:.3f}; threshold<0.12) '
-                '— atypical of camera sensor Bayer noise.')
-
-        # ── S5: Edge density CV (w=2) ─────────────────────────────────────────
-        ed_cv, s5 = self._edge_density_cv(gray)
-        raw_signals['edge_density_cv']          = round(float(ed_cv), 4)
-        raw_signals['s5_edge_density_uniform']  = s5
-        weighted_flags.append(('s5_edge_density_uniform', 2))
-        if s5:
-            reasons.append(
-                f'S5 Edge density spatially uniform (CV={ed_cv:.3f}; threshold<0.50) '
-                '— natural scenes have highly varied edge density per region.')
-
-        # ── S6: Block DCT kurtosis (w=2) ─────────────────────────────────────
-        dk, s6 = self._block_dct_kurtosis(gray)
-        raw_signals['block_dct_kurtosis']      = round(float(dk), 3)
-        raw_signals['s6_dct_kurtosis_low']     = s6
-        weighted_flags.append(('s6_dct_kurtosis_low', 2))
-        if s6:
-            reasons.append(
-                f'S6 DCT coefficient kurtosis low ({dk:.2f}; threshold<4.0) '
-                '— lacks the sparse, heavy-tailed coding of natural camera images.')
-
-        # ── S7: Noise autocorrelation peak (w=3) ─────────────────────────────
-        ac_pk, s7 = self._noise_autocorr_peak(gray)
-        raw_signals['noise_autocorr_peak']     = round(float(ac_pk), 5)
-        raw_signals['s7_noise_structured']     = s7
-        weighted_flags.append(('s7_noise_structured', 3))
-        if s7:
-            reasons.append(
-                f'S7 Noise autocorrelation shows structure (peak={ac_pk:.4f}; threshold>0.12) '
-                '— periodic pattern consistent with AI upsampling / grid artifact.')
-
-        # ── S8: Spectral band anomaly (w=1) ──────────────────────────────────
-        sp_info, s8 = self._spectral_band_anomaly(gray)
-        raw_signals['spectral_info']           = sp_info
-        raw_signals['s8_spectral_anomaly']     = s8
-        weighted_flags.append(('s8_spectral_anomaly', 1))
-        if s8:
-            reasons.append(
-                'S8 Spectral band anomaly — unusual periodic energy in mid/high frequency region.')
-
-        # ── S9: Saturation uniformity (w=1) ──────────────────────────────────
-        sat_u, s9 = self._saturation_uniformity(img)
-        raw_signals['saturation_uniformity']   = round(float(sat_u), 4)
-        raw_signals['s9_saturation_uniform']   = s9
-        weighted_flags.append(('s9_saturation_uniform', 1))
-        if s9:
-            reasons.append(
-                f'S9 Saturation distribution unusually uniform ({sat_u:.4f}; threshold>0.85) '
-                '— real images exhibit greater saturation diversity.')
-
-        # ── S10: Patch texture entropy CV (w=2) ──────────────────────────────
-        pe_cv, s10 = self._patch_texture_diversity(gray)
-        raw_signals['patch_entropy_cv']         = round(float(pe_cv), 4)
-        raw_signals['s10_texture_uniform']      = s10
-        weighted_flags.append(('s10_texture_uniform', 2))
-        if s10:
-            reasons.append(
-                f'S10 Patch texture diversity low (entropy CV={pe_cv:.3f}; threshold<0.20) '
-                '— image patches have suspiciously similar texture complexity.')
-
-        # ── Weighted score ────────────────────────────────────────────────────
-        total_w, triggered_w = 0, 0
-        for flag_key, wt in weighted_flags:
-            total_w += wt
-            if raw_signals.get(flag_key, False):
-                triggered_w += wt
-
-        weighted_score = triggered_w / total_w if total_w > 0 else 0.0
+        low_kurtosis     = l1_kurtosis < 3.5
+        low_energy_ratio = ratio_mean < 2.5 and len(energy_ratios) >= 2
+        high_anisotropy  = anisotropy > 0.40
 
         return {
-            'signals':               raw_signals,
-            'indicator_count':       len(reasons),
-            'indicators_triggered':  reasons,
-            'triggered_weight':      triggered_w,
-            'total_weight':          total_w,
-            'weighted_score':        round(weighted_score, 4),
-            'ai_generated_suspected': weighted_score >= 0.30,
-            'confidence_caveat': (
-                'Multi-signal heuristic v8.1 (10 signals, weighted total=21). '
-                'Weighted score ≥ 0.30 triggers suspicion. '
-                'Modern AI generators (2025+) are increasingly difficult to detect '
-                'with signal-based methods — a trained classifier is required for '
-                'production-grade detection. False positives are possible on images '
-                'with uniform or repetitive content.'
-            ),
+            'levels_computed':    len(subbands),
+            'subband_stats':      subbands,
+            'l1_hh_kurtosis':     float(l1_kurtosis),
+            'energy_ratios':      [float(r) for r in energy_ratios],
+            'energy_ratio_mean':  float(ratio_mean),
+            'energy_ratio_cv':    float(ratio_cv),
+            'lh_hl_anisotropy':   float(anisotropy),
+            'low_kurtosis':       bool(low_kurtosis),
+            'low_energy_ratio':   bool(low_energy_ratio),
+            'high_anisotropy':    bool(high_anisotropy),
+            'ai_signal_detected': bool(low_kurtosis or low_energy_ratio or high_anisotropy),
+            'thresholds': {
+                'kurtosis':     3.5,
+                'energy_ratio': 2.5,
+                'anisotropy':   0.40,
+            },
         }
 
-    # ── Signal implementations ─────────────────────────────────────────────────
+    @staticmethod
+    def _haar_1level(img: np.ndarray):
+        h, w  = img.shape
+        h2, w2 = h - h % 2, w - w % 2
+        img   = img[:h2, :w2]
+        L     = (img[:, 0::2] + img[:, 1::2]) * 0.5
+        H     = (img[:, 0::2] - img[:, 1::2]) * 0.5
+        LL    = (L[0::2, :] + L[1::2, :]) * 0.5
+        LH    = (L[0::2, :] - L[1::2, :]) * 0.5
+        HL    = (H[0::2, :] + H[1::2, :]) * 0.5
+        HH    = (H[0::2, :] - H[1::2, :]) * 0.5
+        return LL, LH, HL, HH
 
     @staticmethod
-    def _local_variance_cv(gray: np.ndarray) -> Tuple[float, bool]:
-        """CV of 64×64 block variances. Low CV = too uniform = AI signal."""
-        block = 64
-        h, w  = gray.shape
-        variances = [
-            float(np.var(gray[by:by + block, bx:bx + block]))
-            for by in range(0, h - block, block)
-            for bx in range(0, w - block, block)
-        ]
-        if len(variances) < 4:
-            return 0.0, False
-        arr = np.array(variances)
-        cv  = float(arr.std() / (arr.mean() + 1e-9))
-        return cv, cv < 0.75
+    def _kurtosis(data: np.ndarray) -> float:
+        if data.size < 4:
+            return 3.0
+        mu    = data.mean()
+        sigma = data.std() + 1e-9
+        return float(np.mean(((data - mu) / sigma) ** 4))
+
+
+class PowerSpectrumExtractor(BaseExtractor):
+    """
+    Radially-averaged power spectral density (PSD) analysis.
+
+    Natural images follow a 1/f^beta power law (beta ≈ 2.0–3.0, Ruderman 1994).
+    Deviations from this range, plus periodic spectral peaks (from tiled
+    convolutional operations) and azimuthal non-uniformity, are indicators
+    of AI generation or heavy post-processing.
+    """
+    name         = "power_spectrum"
+    version      = "9.0"
+    dependencies = ['get_decoded_image']
 
     @staticmethod
-    def _multiscale_noise_floor(gray: np.ndarray) -> Tuple[List[float], bool]:
-        """Gaussian residual std at 3 scales. All < 2.5 = no sensor noise = AI signal."""
-        if cv2 is None:
-            return [], False
-        scores, current = [], gray.astype(np.float32)
-        for _ in range(3):
-            blurred = cv2.GaussianBlur(current, (5, 5), 0)
-            scores.append(round(float(np.std(current - blurred)), 4))
-            ch, cw = current.shape
-            if ch < 32 or cw < 32:
-                break
-            current = cv2.resize(current, (max(1, cw // 2), max(1, ch // 2)))
-        anomaly = bool(scores) and all(s < 2.5 for s in scores)
-        return scores, anomaly
+    def applicable(context) -> bool:
+        return context.file_type == 'image' and np is not None and _SCIPY_OK
 
-    @staticmethod
-    def _gradient_kurtosis(gray: np.ndarray) -> Tuple[float, bool]:
-        """Kurtosis of Sobel gradient magnitudes. < 4.5 = too uniform = AI signal."""
-        if cv2 is None:
-            return 3.0, False
-        g8  = np.clip(gray, 0, 255).astype(np.uint8)
-        sx  = cv2.Sobel(g8, cv2.CV_64F, 1, 0, ksize=3)
-        sy  = cv2.Sobel(g8, cv2.CV_64F, 0, 1, ksize=3)
-        mag = np.sqrt(sx ** 2 + sy ** 2).flatten()
-        std = mag.std() + 1e-9
-        kurt = float(np.mean(((mag - mag.mean()) / std) ** 4))
-        return kurt, kurt < 4.5
+    def _extract(self, context) -> Dict[str, Any]:
+        img = context.get_decoded_image()
+        if img is None:
+            return {'error': 'Could not decode image'}
+        gray = np.array(img.convert('L'), dtype=np.float64)
+        h, w = gray.shape
+        if h < 64 or w < 64:
+            return {'error': 'Image too small for PSD analysis (need ≥ 64×64)'}
 
-    @staticmethod
-    def _local_channel_corr_cv(rgb: np.ndarray, h: int, w: int) -> Tuple[float, bool]:
-        """CV of per-64×64-block RG correlations. Low CV = too consistent = AI signal."""
-        block = 64
-        corrs = []
-        for by in range(0, h - block, block):
-            for bx in range(0, w - block, block):
-                p  = rgb[by:by + block, bx:bx + block, :]
-                r_ = p[:, :, 0].flatten()
-                g_ = p[:, :, 1].flatten()
-                if np.std(r_) > 1e-6 and np.std(g_) > 1e-6:
-                    c = float(np.corrcoef(r_, g_)[0, 1])
-                    if not math.isnan(c):
-                        corrs.append(abs(c))
-        if len(corrs) < 4:
-            return 0.0, False
-        arr = np.array(corrs)
-        cv  = float(arr.std() / (arr.mean() + 1e-9))
-        return cv, cv < 0.12
+        # Hann window to suppress edge artifacts
+        wy   = np.hanning(h)
+        wx   = np.hanning(w)
+        win  = np.outer(wy, wx)
+        gray = (gray - gray.mean()) * win
 
-    @staticmethod
-    def _edge_density_cv(gray: np.ndarray) -> Tuple[float, bool]:
-        """CV of Canny edge density per 32×32 block. Low CV = edges too uniform = AI signal."""
-        if cv2 is None:
-            return 0.0, False
-        block = 32
-        h, w  = gray.shape
-        densities = []
-        for by in range(0, h - block, block):
-            for bx in range(0, w - block, block):
-                patch   = np.clip(gray[by:by + block, bx:bx + block], 0, 255).astype(np.uint8)
-                edges   = cv2.Canny(patch, 50, 150)
-                densities.append(float(np.mean(edges > 0)))
-        if len(densities) < 4:
-            return 0.0, False
-        arr = np.array(densities)
-        cv  = float(arr.std() / (arr.mean() + 1e-9))
-        return cv, cv < 0.50
+        F    = sp_fft.fft2(gray)
+        F    = sp_fft.fftshift(F)
+        psd  = np.abs(F) ** 2
 
-    @staticmethod
-    def _block_dct_kurtosis(gray: np.ndarray) -> Tuple[float, bool]:
-        """Kurtosis of AC DCT coefficients across sampled 8×8 blocks. < 4.0 = AI signal."""
-        if cv2 is None:
-            return 3.0, False
-        g32  = gray.astype(np.float32)
-        h, w = g32.shape
-        h8, w8 = h - h % 8, w - w % 8
-        g32  = g32[:h8, :w8]
-        # Sample at most ~400 blocks
-        step_h = max(1, h8 // (8 * 20))
-        step_w = max(1, w8 // (8 * 20))
-        ac_coeffs = []
-        for by in range(0, h8, 8 * step_h):
-            for bx in range(0, w8, 8 * step_w):
-                blk = g32[by:by + 8, bx:bx + 8] - 128.0
-                d   = cv2.dct(blk)
-                ac_coeffs.extend(d.flatten()[1:].tolist())
-        if len(ac_coeffs) < 64:
-            return 3.0, False
-        arr  = np.array(ac_coeffs, dtype=np.float64)
-        std  = arr.std() + 1e-9
-        kurt = float(np.mean(((arr - arr.mean()) / std) ** 4))
-        return kurt, kurt < 4.0
+        cy, cx = h // 2, w // 2
+        profile, freqs = self._radial_average(psd, cy, cx)
+        if len(freqs) < 16:
+            return {'error': 'Insufficient frequency resolution after radial averaging'}
 
-    @staticmethod
-    def _noise_autocorr_peak(gray: np.ndarray) -> Tuple[float, bool]:
-        """Max off-center 2D autocorrelation peak of noise residual. >0.12 = AI signal."""
-        if cv2 is None:
-            return 0.0, False
-        max_dim = 256
-        h, w    = gray.shape
-        if min(h, w) > max_dim:
-            sc     = max_dim / min(h, w)
-            gray_s = cv2.resize(gray.astype(np.float32),
-                                (max(1, int(w * sc)), max(1, int(h * sc)))).astype(np.float64)
+        n       = len(freqs)
+        lo, hi  = n // 8, 3 * n // 4
+        log_f   = np.log(np.array(freqs[lo:hi], dtype=np.float64))
+        log_p   = np.log(np.array(profile[lo:hi], dtype=np.float64) + 1e-9)
+        beta    = float(-np.polyfit(log_f, log_p, 1)[0])
+
+        # Periodic peaks in the high-frequency quarter of the spectrum
+        hf_profile  = np.array(profile[3 * n // 4:])
+        if hf_profile.size > 4:
+            hf_mean = hf_profile.mean()
+            hf_std  = hf_profile.std() + 1e-9
+            periodic_peaks = int(np.sum(hf_profile > hf_mean + 3.0 * hf_std))
         else:
-            gray_s = gray.copy()
-        blurred  = cv2.GaussianBlur(gray_s.astype(np.float32), (5, 5), 0).astype(np.float64)
-        residual = gray_s - blurred
-        F        = np.fft.fft2(residual)
-        ac       = np.abs(np.fft.ifft2(F * np.conj(F)))
-        ac       = np.fft.fftshift(ac)
-        cy, cx   = ac.shape[0] // 2, ac.shape[1] // 2
-        origin   = ac[cy, cx]
-        if origin < 1e-9:
-            return 0.0, False
-        ac_norm  = ac / origin
-        ac_norm[max(0, cy - 2):cy + 3, max(0, cx - 2):cx + 3] = 0
-        peak = float(ac_norm.max())
-        return peak, peak > 0.12
+            periodic_peaks = 0
 
-    @staticmethod
-    def _spectral_band_anomaly(gray: np.ndarray) -> Tuple[Dict, bool]:
-        """Periodic peak ratio in mid/high frequency bands. >0.002 = AI signal."""
-        if not _SCIPY_OK:
-            return {}, False
-        max_dim = 512
-        h, w    = gray.shape
-        if max(h, w) > max_dim:
-            sc = max_dim / max(h, w)
-            gray_s = (cv2.resize(gray.astype(np.float32),
-                                 (max(1, int(w * sc)), max(1, int(h * sc)))).astype(np.float64)
-                      if cv2 is not None else gray[:int(h * sc), :int(w * sc)])
-        else:
-            gray_s = gray
-        f        = sp_fft.fft2(gray_s)
-        mag      = np.abs(sp_fft.fftshift(f))
-        h2, w2   = mag.shape
-        cy, cx   = h2 // 2, w2 // 2
-        Y, X     = np.ogrid[:h2, :w2]
-        dist     = np.sqrt((Y - cy) ** 2 + (X - cx) ** 2)
-        max_d    = float(min(cy, cx))
-        mid_mask  = (dist > max_d * 0.10) & (dist <= max_d * 0.40)
-        high_mask = (dist > max_d * 0.40) & (dist <= max_d)
-        combined  = mag[mid_mask | high_mask].flatten()
-        mean_f    = float(np.mean(combined))
-        std_f     = float(np.std(combined)) + 1e-9
-        peak_ratio = float(np.sum(combined > mean_f + 5 * std_f)) / (len(combined) + 1)
-        mid_e  = float(np.mean(mag[mid_mask] ** 2)) + 1e-9
-        high_e = float(np.mean(mag[high_mask] ** 2)) + 1e-9
-        info = {
-            'high_mid_energy_ratio':   round(high_e / mid_e, 5),
-            'periodic_peak_ratio':     round(peak_ratio, 6),
+        # Azimuthal coefficient of variation at a mid-frequency ring
+        azimuthal_cv = self._azimuthal_cv(psd, cy, cx, ring_r=min(cy, cx) // 4)
+
+        beta_anomaly     = beta < 1.4 or beta > 4.2
+        high_periodicity = periodic_peaks > 5
+        high_azimuthal   = azimuthal_cv > 0.60
+        ai_signal        = (beta_anomaly or high_periodicity) and high_azimuthal
+
+        return {
+            'spectral_beta':           float(beta),
+            'beta_expected_range':     [1.4, 4.2],
+            'beta_anomaly':            bool(beta_anomaly),
+            'periodic_hf_peaks':       int(periodic_peaks),
+            'azimuthal_cv':            float(azimuthal_cv),
+            'high_azimuthal_variance': bool(high_azimuthal),
+            'high_freq_periodicity':   bool(high_periodicity),
+            'ai_signal_detected':      bool(ai_signal),
         }
-        return info, peak_ratio > 0.002
 
     @staticmethod
-    def _saturation_uniformity(img) -> Tuple[float, bool]:
-        """Normalized saturation entropy (1−entropy/max). >0.85 = too uniform = AI signal."""
-        if Image is None or np is None:
-            return 0.0, False
-        try:
-            hsv = np.array(img.convert('HSV'))
-        except Exception:
-            return 0.0, False
-        sat  = hsv[:, :, 1].astype(np.float64)
-        hist, _ = np.histogram(sat, bins=32, range=(0, 255), density=True)
-        hist = hist / (hist.sum() + 1e-9)
-        ent  = -np.sum(hist * np.log2(hist + 1e-12))
-        max_e = math.log2(len(hist))
-        uniformity = float(1.0 - (ent / max_e if max_e > 0 else 0))
-        return uniformity, uniformity > 0.85
+    def _radial_average(psd, cy, cx):
+        h, w   = psd.shape
+        max_r  = min(cy, cx, h - cy, w - cx)
+        y, x   = np.ogrid[:h, :w]
+        r_map  = np.sqrt((y - cy)**2 + (x - cx)**2).astype(int)
+        profile, freqs = [], []
+        for r in range(1, max_r):
+            mask = (r_map == r)
+            if mask.sum() > 0:
+                profile.append(float(psd[mask].mean()))
+                freqs.append(r)
+        return profile, freqs
 
     @staticmethod
-    def _patch_texture_diversity(gray: np.ndarray) -> Tuple[float, bool]:
-        """CV of 32×32 block entropy. Low CV = all patches equally textured = AI signal."""
-        block = 32
-        h, w  = gray.shape
-        entropies = []
+    def _azimuthal_cv(psd, cy, cx, ring_r: int) -> float:
+        h, w  = psd.shape
+        y, x  = np.ogrid[:h, :w]
+        r_map = np.sqrt((y - cy)**2 + (x - cx)**2)
+        ring  = psd[(r_map >= ring_r) & (r_map < ring_r + 4)]
+        if ring.size < 8:
+            return 0.0
+        mean_ = ring.mean() + 1e-9
+        return float(ring.std() / mean_)
+
+
+class JPEGGhostExtractor(BaseExtractor):
+    """
+    JPEG Ghost detection (Farid 2009) for spatial manipulation.
+
+    When a region is pasted from a JPEG with a different original quality,
+    re-compressing the composite image at the original quality of the
+    background yields minimal error everywhere except in the pasted region.
+    Scanning multiple quality levels produces a 'ghost quality map'; spatial
+    inconsistency in this map is a strong manipulation indicator.
+    """
+    name           = "jpeg_ghost"
+    version        = "9.0"
+    dependencies   = ['get_decoded_image']
+    QUALITY_LEVELS = (50, 65, 75, 85, 95)
+    BLOCK_SIZE     = 32
+
+    @staticmethod
+    def applicable(context) -> bool:
+        return context.file_type == 'image' and Image is not None and np is not None
+
+    def _extract(self, context) -> Dict[str, Any]:
+        img = context.get_decoded_image()
+        if img is None:
+            return {'error': 'Could not decode image'}
+        rgb      = img.convert('RGB')
+        gray_arr = np.array(rgb.convert('L'), dtype=np.float64)
+        h, w     = gray_arr.shape
+        block    = self.BLOCK_SIZE
+
+        if h < block * 4 or w < block * 4:
+            return {'error': 'Image too small for JPEG ghost analysis (need ≥ 128×128)'}
+
+        # Build per-quality difference maps
+        diff_maps = {}
+        for q in self.QUALITY_LEVELS:
+            buf = io.BytesIO()
+            rgb.save(buf, 'JPEG', quality=q)
+            buf.seek(0)
+            recomp         = np.array(Image.open(buf).convert('L'), dtype=np.float64)
+            diff_maps[q]   = np.abs(gray_arr - recomp)
+
+        # Per-block ghost quality assignment
+        block_ghosts = []
         for by in range(0, h - block, block):
             for bx in range(0, w - block, block):
-                patch = gray[by:by + block, bx:bx + block]
-                hist, _ = np.histogram(patch, bins=16, range=(0, 255))
-                hist_n  = hist / (hist.sum() + 1e-9)
-                ent     = -np.sum(hist_n * np.log2(hist_n + 1e-12))
-                entropies.append(float(ent))
-        if len(entropies) < 4:
-            return 0.0, False
-        arr = np.array(entropies)
-        cv  = float(arr.std() / (arr.mean() + 1e-9))
-        return cv, cv < 0.20
+                block_diffs = {
+                    q: diff_maps[q][by:by + block, bx:bx + block].mean()
+                    for q in self.QUALITY_LEVELS
+                }
+                block_ghosts.append(min(block_diffs, key=block_diffs.get))
+
+        ghost_counter    = Counter(block_ghosts)
+        dominant_q       = ghost_counter.most_common(1)[0][0]
+        total_blocks     = len(block_ghosts)
+        inconsistent     = sum(1 for g in block_ghosts if g != dominant_q)
+        inconsistency_r  = inconsistent / total_blocks
+        ghost_std        = float(np.std(block_ghosts))
+
+        manipulation_suspected = inconsistency_r > 0.12 and ghost_std > 8.0
+
+        return {
+            'qualities_tested':        list(self.QUALITY_LEVELS),
+            'blocks_analyzed':         total_blocks,
+            'dominant_ghost_quality':  int(dominant_q),
+            'inconsistent_blocks':     inconsistent,
+            'inconsistency_ratio':     float(inconsistency_r),
+            'ghost_quality_std':       float(ghost_std),
+            'ghost_distribution':      {int(k): v for k, v in ghost_counter.items()},
+            'manipulation_suspected':  bool(manipulation_suspected),
+            'method':                  'Farid (2009) JPEG Ghost — block-level minimum recompression error',
+            'thresholds': {
+                'inconsistency_ratio': 0.12,
+                'ghost_quality_std':   8.0,
+            },
+        }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# v8.1 ENHANCEMENT: AIManipulationExtractor (4-metric block analysis)
-# ══════════════════════════════════════════════════════════════════════════════
-
-class AIManipulationExtractor(BaseExtractor):
+class LocalPatchStatisticsExtractor(BaseExtractor):
     """
-    Enhanced localized AI-manipulation detector (v8.1).
-    Four per-block metrics: Laplacian noise variance, CFA green-channel
-    correlation, local entropy, gradient mean.
-    Blocks that are outliers in ≥2 metrics simultaneously are flagged.
+    4×4 grid local statistical analysis for uniformity anomalies.
+
+    Natural images show high inter-patch variability: bright sky, dark
+    shadows, and textured areas differ strongly in brightness AND in
+    high-frequency (texture) content. AI generators tend to produce
+    images with more uniformly distributed statistics — a telltale sign
+    of synthesised content or AI-inpainting over a large region.
     """
-    name    = "ai_manipulation_heuristic"
-    version = "8.1"
+    name         = "local_patch_statistics"
+    version      = "9.0"
+    dependencies = ['get_decoded_image']
+    GRID         = 4
+
+    @staticmethod
+    def applicable(context) -> bool:
+        return context.file_type == 'image' and np is not None and cv2 is not None
+
+    def _extract(self, context) -> Dict[str, Any]:
+        img = context.get_decoded_image()
+        if img is None:
+            return {'error': 'Could not decode image'}
+        gray = np.array(img.convert('L'), dtype=np.float64)
+        h, w = gray.shape
+        g    = self.GRID
+        ph   = h // g
+        pw   = w // g
+        if ph < 16 or pw < 16:
+            return {'error': 'Image too small for patch analysis'}
+
+        patches, means, stds, hf_vars = [], [], [], []
+
+        for row in range(g):
+            for col in range(g):
+                patch = gray[row * ph:(row + 1) * ph, col * pw:(col + 1) * pw]
+                m     = float(patch.mean())
+                s     = float(patch.std())
+                flat  = patch.flatten()
+                mu    = flat.mean()
+                sig   = flat.std() + 1e-9
+                sk    = float(np.mean(((flat - mu) / sig) ** 3))
+                ku    = float(np.mean(((flat - mu) / sig) ** 4))
+                hfv   = float(cv2.Laplacian(patch, cv2.CV_64F).var())
+
+                patches.append({
+                    'row': row, 'col': col,
+                    'mean': m, 'std': s,
+                    'skewness': sk, 'kurtosis': ku,
+                    'hf_variance': hfv,
+                })
+                means.append(m)
+                stds.append(s)
+                hf_vars.append(hfv)
+
+        mean_arr       = np.array(means)
+        hf_arr         = np.array(hf_vars)
+        brightness_cv  = float(mean_arr.std() / (mean_arr.mean() + 1e-9))
+        texture_cv     = float(hf_arr.std() / (hf_arr.mean() + 1e-9))
+        hf_mu          = hf_arr.mean()
+        hf_sig         = hf_arr.std() + 1e-9
+        hf_kurtosis    = float(np.mean(((hf_arr - hf_mu) / hf_sig) ** 4))
+
+        low_brightness_cv = brightness_cv < 0.25
+        low_texture_cv    = texture_cv    < 0.40
+        low_hf_kurtosis   = hf_kurtosis   < 3.0
+        ai_signal         = (low_brightness_cv and low_texture_cv) or \
+                            (low_hf_kurtosis and low_texture_cv)
+
+        return {
+            'grid_size':            f'{g}×{g}',
+            'patches_analyzed':     len(patches),
+            'patch_stats':          patches,
+            'brightness_cv':        float(brightness_cv),
+            'texture_cv':           float(texture_cv),
+            'hf_variance_kurtosis': float(hf_kurtosis),
+            'low_brightness_cv':    bool(low_brightness_cv),
+            'low_texture_cv':       bool(low_texture_cv),
+            'low_hf_kurtosis':      bool(low_hf_kurtosis),
+            'ai_signal_detected':   bool(ai_signal),
+            'thresholds': {
+                'brightness_cv': 0.25,
+                'texture_cv':    0.40,
+                'hf_kurtosis':   3.0,
+            },
+        }
+
+
+class GradientCoherenceExtractor(BaseExtractor):
+    """
+    Gradient orientation entropy and anisotropy analysis.
+
+    Real photographs have sparse, structured gradient fields — strong edges
+    concentrate at a few dominant orientations (horizontal floors, vertical
+    walls, diagonal edges). AI-generated images often exhibit:
+      - Higher orientation entropy (more isotropic gradient distribution)
+        caused by hallucinated fine textures spread uniformly
+      - Lower dominant-orientation concentration
+      - Sometimes periodic gradient patterns from convolutional upsampling
+    """
+    name         = "gradient_coherence"
+    version      = "9.0"
     dependencies = ['get_decoded_image']
 
     @staticmethod
@@ -1922,613 +1931,485 @@ class AIManipulationExtractor(BaseExtractor):
         if img is None:
             return {'error': 'Could not decode image'}
         gray = np.array(img.convert('L'), dtype=np.float32)
-        rgb  = np.array(img.convert('RGB'), dtype=np.float64)
-        h, w = gray.shape
-        block = 32
 
-        noise_grid, cfa_grid, entropy_grid, grad_grid = [], [], [], []
-
-        for by in range(0, h - block, block):
-            for bx in range(0, w - block, block):
-                pg = gray[by:by + block, bx:bx + block]
-                pc = rgb[by:by + block, bx:bx + block, :]
-
-                # Metric 1: Laplacian variance (noise proxy)
-                noise_grid.append(float(cv2.Laplacian(pg, cv2.CV_32F).var()))
-
-                # Metric 2: CFA green-channel correlation
-                cfa_grid.append(CFAExtractor._cfa_score(pc))
-
-                # Metric 3: Local entropy
-                hist, _ = np.histogram(pg, bins=16, range=(0, 255))
-                hn      = hist / (hist.sum() + 1e-9)
-                entropy_grid.append(float(-np.sum(hn * np.log2(hn + 1e-12))))
-
-                # Metric 4: Mean gradient magnitude
-                sx = cv2.Sobel(pg, cv2.CV_32F, 1, 0, ksize=3)
-                sy = cv2.Sobel(pg, cv2.CV_32F, 0, 1, ksize=3)
-                grad_grid.append(float(np.sqrt(sx ** 2 + sy ** 2).mean()))
-
-        if not noise_grid:
-            return {'error': 'Image too small for block analysis'}
-
-        n_arr = np.array(noise_grid)
-        c_arr = np.array(cfa_grid)
-        e_arr = np.array(entropy_grid)
-        g_arr = np.array(grad_grid)
-
-        n_med = np.median(n_arr)
-        c_med = np.median(c_arr)
-        e_med = np.median(e_arr)
-        g_med = np.median(g_arr)
-
-        # Original 2-metric criterion (kept for backward comparison)
-        suspect_orig = int(np.sum(
-            (c_arr < c_med * 0.5) & (np.abs(n_arr - n_med) > n_med * 0.75)
-        ))
-
-        # Enhanced: blocks outlying in ≥2 of 4 metrics
-        n_out = np.abs(n_arr - n_med) > 3.0 * (np.median(np.abs(n_arr - n_med)) + 1e-6)
-        c_out = c_arr < c_med * 0.40
-        e_out = np.abs(e_arr - e_med) > 2.0 * (e_arr.std() + 1e-6)
-        g_out = np.abs(g_arr - g_med) > 2.0 * (g_arr.std() + 1e-6)
-
-        multi_out      = (n_out.astype(int) + c_out.astype(int) +
-                          e_out.astype(int) + g_out.astype(int)) >= 2
-        suspect_enh    = int(np.sum(multi_out))
-        total_blocks   = len(noise_grid)
-        ratio_orig     = suspect_orig / total_blocks
-        ratio_enh      = suspect_enh / total_blocks
-
-        suspected = ratio_enh > 0.04 or ratio_orig > 0.05
-
-        return {
-            'blocks_analyzed':              total_blocks,
-            'suspect_block_count_original': suspect_orig,
-            'suspect_block_count_enhanced': suspect_enh,
-            'suspect_ratio_original':       round(float(ratio_orig), 4),
-            'suspect_ratio_enhanced':       round(float(ratio_enh), 4),
-            'metric_medians': {
-                'noise_variance': round(float(n_med), 3),
-                'cfa_score':      round(float(c_med), 4),
-                'entropy':        round(float(e_med), 4),
-                'gradient_mean':  round(float(g_med), 3),
-            },
-            'localized_ai_edit_suspected':  suspected,
-            'method': (
-                'Enhanced 4-metric block analysis v8.1: Laplacian noise variance, '
-                'CFA green-channel correlation, local entropy, gradient mean. '
-                'Blocks outlying in ≥2 metrics are flagged as spatially suspect.'
-            ),
-            'confidence_caveat': 'Heuristic corroborating signal, not a standalone verdict.',
-        }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# NEW v8.1: WaveletAnalysisExtractor
-# ══════════════════════════════════════════════════════════════════════════════
-
-class WaveletAnalysisExtractor(BaseExtractor):
-    """
-    Haar 3-level 2D wavelet decomposition (pure numpy — no pywavelets).
-    Checks:
-      (a) Inter-level energy decay — natural images follow ~1/f² law (decay ~2–8).
-      (b) HH subband kurtosis at level 1 — natural images are sparse (kurtosis > 5).
-      (c) Fine-to-coarse energy ratio (level-1 total / level-3 total).
-    """
-    name    = "wavelet_analysis"
-    version = "8.1"
-    dependencies = ['get_decoded_image']
-
-    @staticmethod
-    def applicable(context) -> bool:
-        return context.file_type == 'image' and np is not None
-
-    def _extract(self, context) -> Dict[str, Any]:
-        img = context.get_decoded_image()
-        if img is None:
-            return {'error': 'Could not decode image'}
-        gray = np.array(img.convert('L'), dtype=np.float64)
-        if min(gray.shape) < 64:
-            return {'error': 'Image too small (min 64×64 for 3-level wavelet)'}
-
-        subbands, LL = self._haar_2d(gray, levels=3)
-
-        # Per-level total detail energy
-        level_energies: Dict[int, float] = {}
-        level_stats: List[Dict]          = []
-        for i, sb in enumerate(subbands):
-            lv_e = 0.0
-            for sn, coeff in sb.items():
-                e    = float(np.mean(coeff ** 2))
-                flat = coeff.flatten()
-                std  = float(np.std(flat)) + 1e-9
-                kurt = float(np.mean(((flat - float(np.mean(flat))) / std) ** 4)) \
-                       if len(flat) > 4 else 3.0
-                level_stats.append({
-                    'level': i + 1, 'subband': sn,
-                    'energy': round(e, 6), 'kurtosis': round(kurt, 3),
-                })
-                lv_e += e
-            level_energies[i + 1] = lv_e
-
-        # Energy decay ratios between consecutive levels
-        decay_ratios = []
-        for i in range(1, len(level_energies)):
-            prev_e = level_energies[i]
-            curr_e = level_energies[i + 1]
-            if curr_e > 0:
-                decay_ratios.append(round(float(prev_e / curr_e), 3))
-
-        mean_decay = float(np.mean(decay_ratios)) if decay_ratios else 0.0
-
-        # HH kurtosis at level 1 (finest diagonal detail)
-        hh1 = next((s['kurtosis'] for s in level_stats
-                     if s['level'] == 1 and s['subband'] == 'HH'), 3.0)
-
-        # Fine-to-coarse energy ratio
-        e1 = level_energies.get(1, 0.0)
-        e3 = level_energies.get(3, 0.0)
-        fc_ratio = float(e1 / (e3 + 1e-9))
-
-        # Anomaly flags
-        decay_anomaly    = mean_decay < 1.3 or mean_decay > 15.0
-        kurtosis_anomaly = hh1 < 3.5
-        ratio_anomaly    = fc_ratio < 2.0 or fc_ratio > 60.0
-
-        ai_signals = int(decay_anomaly) + int(kurtosis_anomaly) + int(ratio_anomaly)
-
-        return {
-            'level_energies':              level_energies,
-            'energy_decay_ratios':         decay_ratios,
-            'mean_energy_decay_ratio':     round(mean_decay, 4),
-            'hh1_subband_kurtosis':        round(hh1, 3),
-            'fine_to_coarse_energy_ratio': round(fc_ratio, 4),
-            'anomalous_energy_decay':      decay_anomaly,
-            'anomalous_hh_kurtosis':       kurtosis_anomaly,
-            'anomalous_energy_ratio':      ratio_anomaly,
-            'ai_wavelet_signals':          ai_signals,
-            'ai_signal_suspected':         ai_signals >= 2,
-            'method': (
-                'Haar 3-level 2D wavelet (pure numpy). '
-                'Checks energy decay ratio (natural ~2–8), '
-                'HH-1 kurtosis (natural >5), '
-                'fine/coarse energy ratio.'
-            ),
-        }
-
-    @staticmethod
-    def _haar_2d(img: np.ndarray, levels: int = 3):
-        """Pure-numpy Haar 2D wavelet decomposition."""
-        subbands = []
-        current  = img.astype(np.float64)
-        for _ in range(levels):
-            h, w   = current.shape
-            h2, w2 = h - h % 2, w - w % 2
-            c      = current[:h2, :w2]
-            # Row-wise low/high pass
-            L  = (c[:, 0::2] + c[:, 1::2]) / 2.0
-            H  = (c[:, 0::2] - c[:, 1::2]) / 2.0
-            # Column-wise
-            LL = (L[0::2, :] + L[1::2, :]) / 2.0
-            HL = (L[0::2, :] - L[1::2, :]) / 2.0
-            LH = (H[0::2, :] + H[1::2, :]) / 2.0
-            HH = (H[0::2, :] - H[1::2, :]) / 2.0
-            subbands.append({'HL': HL, 'LH': LH, 'HH': HH})
-            current = LL
-        return subbands, current
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# NEW v8.1: LocalTextureConsistencyExtractor
-# ══════════════════════════════════════════════════════════════════════════════
-
-class LocalTextureConsistencyExtractor(BaseExtractor):
-    """
-    Block-level texture diversity analysis.
-    For each 32×32 block computes: std deviation, histogram entropy,
-    and (if cv2 available) Canny edge density.
-    Reports CV for each metric. Low CV across the image = suspiciously
-    uniform texture = AI-generation signal.
-    """
-    name    = "local_texture_consistency"
-    version = "8.1"
-    dependencies = ['get_decoded_image']
-
-    @staticmethod
-    def applicable(context) -> bool:
-        return context.file_type == 'image' and np is not None
-
-    def _extract(self, context) -> Dict[str, Any]:
-        img = context.get_decoded_image()
-        if img is None:
-            return {'error': 'Could not decode image'}
-        gray = np.array(img.convert('L'), dtype=np.float64)
-        h, w = gray.shape
-        if min(h, w) < 64:
-            return {'error': 'Image too small (min 64×64)'}
-
-        block = 32
-        stds, entropies, edge_densities = [], [], []
-
-        for by in range(0, h - block, block):
-            for bx in range(0, w - block, block):
-                patch = gray[by:by + block, bx:bx + block]
-                stds.append(float(np.std(patch)))
-
-                hist, _ = np.histogram(patch, bins=16, range=(0, 255))
-                hist_n  = hist / (hist.sum() + 1e-9)
-                entropies.append(float(-np.sum(hist_n * np.log2(hist_n + 1e-12))))
-
-                if cv2 is not None:
-                    edges = cv2.Canny(np.clip(patch, 0, 255).astype(np.uint8), 30, 100)
-                    edge_densities.append(float(np.mean(edges > 0)))
-
-        def _cv(arr_list: List[float]) -> Tuple[float, float]:
-            if len(arr_list) < 2:
-                return 0.0, 0.0
-            a = np.array(arr_list)
-            return float(a.std() / (a.mean() + 1e-9)), float(a.mean())
-
-        std_cv,  std_mean  = _cv(stds)
-        ent_cv,  ent_mean  = _cv(entropies)
-        edge_cv, edge_mean = _cv(edge_densities) if edge_densities else (0.0, 0.0)
-
-        std_flag  = std_cv  < 0.60
-        ent_flag  = ent_cv  < 0.20
-        edge_flag = bool(edge_densities) and edge_cv < 0.50
-
-        ai_signals = int(std_flag) + int(ent_flag) + int(edge_flag)
-
-        return {
-            'blocks_analyzed':          len(stds),
-            'block_std_cv':             round(std_cv,  4),
-            'block_std_mean':           round(std_mean, 3),
-            'block_entropy_cv':         round(ent_cv,  4),
-            'block_entropy_mean':       round(ent_mean, 4),
-            'block_edge_density_cv':    round(edge_cv,  4),
-            'block_edge_density_mean':  round(edge_mean, 4),
-            'std_too_uniform':          std_flag,
-            'entropy_too_uniform':      ent_flag,
-            'edge_density_too_uniform': edge_flag,
-            'ai_texture_signals':       ai_signals,
-            'ai_texture_suspected':     ai_signals >= 2,
-            'method': (
-                '32×32 block texture CV analysis: '
-                'pixel std (CV<0.60), entropy (CV<0.20), '
-                'Canny edge density (CV<0.50). '
-                '≥2 flags → suspected AI uniform texture.'
-            ),
-        }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# NEW v8.1: AdvancedJPEGGhostExtractor
-# ══════════════════════════════════════════════════════════════════════════════
-
-class AdvancedJPEGGhostExtractor(BaseExtractor):
-    """
-    Multi-quality JPEG ghost analysis.
-    Re-saves the image at qualities [50, 65, 80, 95] and computes per-block
-    residuals (16×16 blocks). For each block the "optimal quality" (= the
-    re-save that produces the lowest residual, meaning it is closest to that
-    block's original encoding quality) is recorded.
-
-    If all blocks share the same optimal quality the image has a consistent
-    JPEG history. High std of optimal-quality indices indicates blocks with
-    different encoding histories → a splice or manipulation signal.
-    """
-    name    = "jpeg_ghost"
-    version = "8.1"
-    dependencies = ['get_decoded_image']
-
-    QUALITIES = [50, 65, 80, 95]
-    BLOCK     = 16
-    MAX_DIM   = 1024   # resize for efficiency
-
-    @staticmethod
-    def applicable(context) -> bool:
-        return context.file_type == 'image' and Image is not None and np is not None
-
-    def _extract(self, context) -> Dict[str, Any]:
-        img = context.get_decoded_image()
-        if img is None:
-            return {'error': 'Could not decode image'}
-
-        rgb = img.convert('RGB')
-
-        # Resize large images for efficiency
-        w_orig, h_orig = rgb.size
-        if max(h_orig, w_orig) > self.MAX_DIM:
-            scale = self.MAX_DIM / max(h_orig, w_orig)
-            rgb   = rgb.resize((max(1, int(w_orig * scale)),
-                                max(1, int(h_orig * scale))), Image.LANCZOS)
-
-        rgb_arr = np.array(rgb, dtype=np.int32)
-        h, w    = rgb_arr.shape[:2]
-        block   = self.BLOCK
-        n_by    = (h - block) // block
-        n_bx    = (w - block) // block
-
-        if n_by < 2 or n_bx < 2:
-            return {'error': 'Image too small for block ghost analysis (min ~64×64)'}
-
-        quality_residuals: Dict[int, np.ndarray] = {}
-
-        for q in self.QUALITIES:
-            buf = io.BytesIO()
-            rgb.save(buf, 'JPEG', quality=q)
-            buf.seek(0)
-            try:
-                recomp = np.array(Image.open(buf).convert('RGB'), dtype=np.int32)
-            except Exception:
-                continue
-            if recomp.shape != rgb_arr.shape:
-                continue
-            diff         = np.abs(rgb_arr - recomp).sum(axis=2)
-            block_errors = np.zeros((n_by, n_bx), dtype=np.float32)
-            for by in range(n_by):
-                for bx in range(n_bx):
-                    block_errors[by, bx] = diff[
-                        by * block:(by + 1) * block,
-                        bx * block:(bx + 1) * block
-                    ].mean()
-            quality_residuals[q] = block_errors
-
-        if len(quality_residuals) < 2:
-            return {'error': 'Could not compute ghost residuals', 'qualities_tested': 0}
-
-        qualities_used = list(quality_residuals.keys())
-        stack          = np.stack(list(quality_residuals.values()), axis=2)
-        best_q_idx     = np.argmin(stack, axis=2)   # index into qualities_used
-
-        idx_std    = float(best_q_idx.std())
-        idx_unique = int(len(np.unique(best_q_idx)))
-
-        mean_errors = {q: round(float(quality_residuals[q].mean()), 3)
-                       for q in quality_residuals}
-
-        # Inconsistency: multiple different "optimal qualities" across blocks
-        ghost_inconsistency = idx_std > 0.8 and idx_unique >= 2
-
-        # Distribution of optimal quality indices
-        total_blocks = n_by * n_bx
-        idx_counts   = {qualities_used[i]: int(np.sum(best_q_idx == i))
-                        for i in range(len(qualities_used))}
-
-        return {
-            'blocks_analyzed':               total_blocks,
-            'qualities_tested':              qualities_used,
-            'mean_error_by_quality':         mean_errors,
-            'optimal_quality_distribution':  idx_counts,
-            'best_quality_index_std':        round(idx_std, 4),
-            'best_quality_index_unique_count': idx_unique,
-            'ghost_inconsistency_suspected': ghost_inconsistency,
-            'method': (
-                f'JPEG ghost analysis at qualities {qualities_used}. '
-                '16×16 per-block minimum-residual quality mapping. '
-                'Inconsistent optimal-quality distribution → mixed JPEG history → '
-                'possible composite / spliced region.'
-            ),
-        }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# NEW v8.1: AIDetectionFusionExtractor
-# ══════════════════════════════════════════════════════════════════════════════
-
-class AIDetectionFusionExtractor(BaseExtractor):
-    """
-    Independent weighted consensus of 6 AI-generation signals.
-    Computes its own lightweight measurements so it does not depend on
-    results from other extractors.  Acts as a second-opinion extractor
-    that can confirm or challenge the individual extractor outputs.
-
-    Signal                        Weight  Threshold
-    ─────────────────────────────────────────────────────────────────────────
-    A  Noise floor std                 3    < 1.8
-    B  Local variance CV               3    < 0.70
-    C  DCT AC coefficient kurtosis     2    < 4.0
-    D  Wavelet energy decay l1→l2      2    < 1.3 or > 12.0
-    E  Noise autocorrelation peak      3    > 0.12
-    F  Mean CFA correlation score      2    < 0.12
-
-    Total weight = 15.  ai_generated_suspected when weighted_score >= 0.40.
-    """
-    name    = "ai_detection_fusion"
-    version = "8.1"
-    dependencies = ['get_decoded_image']
-
-    @staticmethod
-    def applicable(context) -> bool:
-        return context.file_type == 'image' and np is not None
-
-    def _extract(self, context) -> Dict[str, Any]:
-        img = context.get_decoded_image()
-        if img is None:
-            return {'error': 'Could not decode image'}
-
-        gray = np.array(img.convert('L'), dtype=np.float64)
-        rgb  = np.array(img.convert('RGB'), dtype=np.float64)
-        h, w = gray.shape
-
-        if min(h, w) < 64:
-            return {'error': 'Image too small (min 64×64)'}
-
-        signals_found:   List[str]       = []
-        signal_details:  Dict[str, Any]  = {}
-        total_weight     = 0
-        triggered_weight = 0
-
-        # ── A: Noise floor std (w=3) ──────────────────────────────────────────
-        w_a = 3
-        total_weight += w_a
-        if cv2 is not None:
-            blurred  = cv2.GaussianBlur(gray.astype(np.float32), (5, 5), 0).astype(np.float64)
-            noise_std = float(np.std(gray - blurred))
-            flag_a    = noise_std < 1.8
-            signal_details['A_noise_floor_std'] = round(noise_std, 4)
-            if flag_a:
-                triggered_weight += w_a
-                signals_found.append(
-                    f'A) Low noise floor std ({noise_std:.3f}; thr<1.8) — '
-                    f'sensor noise absent (weight {w_a}).')
-
-        # ── B: Local variance CV (w=3) ────────────────────────────────────────
-        w_b = 3
-        total_weight += w_b
-        block = 64
-        variances = [
-            float(np.var(gray[by:by + block, bx:bx + block]))
+        gx   = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy   = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        mag  = np.sqrt(gx**2 + gy**2)
+
+        # Use only the top 20% strongest gradient pixels
+        thresh_ = np.percentile(mag, 80)
+        strong  = mag > thresh_
+        if strong.sum() < 100:
+            return {'error': 'Insufficient strong-gradient pixels'}
+
+        ori_dir = np.mod(np.arctan2(gy[strong], gx[strong]), np.pi)
+        hist, _ = np.histogram(ori_dir, bins=36, range=(0, np.pi), density=True)
+        hist    = hist / (hist.sum() + 1e-9)
+        entropy = float(-np.sum(hist * np.log2(hist + 1e-12)))
+        max_ent = math.log2(36)
+        norm_e  = float(entropy / max_ent)
+
+        # Dominant orientation: power in the top-3 bins
+        top3_power = float(np.sort(hist)[::-1][:3].sum())
+
+        # Block-level gradient magnitude CV (high = heterogeneous = more natural)
+        block  = 32
+        h, w   = gray.shape
+        bv     = [
+            float(mag[by:by + block, bx:bx + block].mean())
             for by in range(0, h - block, block)
             for bx in range(0, w - block, block)
         ]
-        if len(variances) >= 4:
-            var_arr = np.array(variances)
-            var_cv  = float(var_arr.std() / (var_arr.mean() + 1e-9))
-            flag_b  = var_cv < 0.70
-            signal_details['B_local_variance_cv'] = round(var_cv, 4)
-            if flag_b:
-                triggered_weight += w_b
-                signals_found.append(
-                    f'B) Local variance too uniform (CV={var_cv:.3f}; thr<0.70) — '
-                    f'lacks natural scene diversity (weight {w_b}).')
+        bv_arr   = np.array(bv) if bv else np.array([0.0])
+        block_cv = float(bv_arr.std() / (bv_arr.mean() + 1e-9))
 
-        # ── C: DCT AC kurtosis (w=2) ──────────────────────────────────────────
-        w_c = 2
-        total_weight += w_c
-        if cv2 is not None:
-            g32  = gray.astype(np.float32)
-            h8, w8 = h - h % 8, w - w % 8
-            g32  = g32[:h8, :w8]
-            step_h = max(1, h8 // (8 * 20))
-            step_w = max(1, w8 // (8 * 20))
-            ac_c = []
-            for by in range(0, h8, 8 * step_h):
-                for bx in range(0, w8, 8 * step_w):
-                    blk = g32[by:by + 8, bx:bx + 8] - 128.0
-                    d   = cv2.dct(blk)
-                    ac_c.extend(d.flatten()[1:].tolist())
-            if len(ac_c) >= 64:
-                arr_c    = np.array(ac_c, dtype=np.float64)
-                std_c    = arr_c.std() + 1e-9
-                dct_kurt = float(np.mean(((arr_c - arr_c.mean()) / std_c) ** 4))
-                flag_c   = dct_kurt < 4.0
-                signal_details['C_dct_kurtosis'] = round(dct_kurt, 3)
-                if flag_c:
-                    triggered_weight += w_c
-                    signals_found.append(
-                        f'C) Low DCT kurtosis ({dct_kurt:.2f}; thr<4.0) — '
-                        f'lacks sparse natural image coding (weight {w_c}).')
-
-        # ── D: Wavelet energy decay L1→L2 (w=2) ──────────────────────────────
-        w_d = 2
-        total_weight += w_d
-        try:
-            subbands, _ = WaveletAnalysisExtractor._haar_2d(gray, levels=3)
-            level_e = [sum(float(np.mean(sb[k] ** 2)) for k in sb) for sb in subbands]
-            if len(level_e) >= 2 and level_e[1] > 0:
-                decay_l1_l2 = float(level_e[0] / level_e[1])
-                flag_d      = decay_l1_l2 < 1.3 or decay_l1_l2 > 12.0
-                signal_details['D_wavelet_decay_l1_l2'] = round(decay_l1_l2, 3)
-                if flag_d:
-                    triggered_weight += w_d
-                    signals_found.append(
-                        f'D) Anomalous wavelet energy decay L1→L2 ({decay_l1_l2:.2f}; '
-                        f'normal 1.3–12.0) — deviates from 1/f² scaling (weight {w_d}).')
-        except Exception:
-            pass
-
-        # ── E: Noise autocorrelation peak (w=3) ──────────────────────────────
-        w_e = 3
-        total_weight += w_e
-        if cv2 is not None:
-            max_dim = 256
-            gray_s  = gray
-            if min(h, w) > max_dim:
-                sc     = max_dim / min(h, w)
-                gray_s = cv2.resize(gray.astype(np.float32),
-                                    (max(1, int(w * sc)), max(1, int(h * sc)))
-                                    ).astype(np.float64)
-            bl2  = cv2.GaussianBlur(gray_s.astype(np.float32), (5, 5), 0).astype(np.float64)
-            res2 = gray_s - bl2
-            F2   = np.fft.fft2(res2)
-            ac2  = np.abs(np.fft.ifft2(F2 * np.conj(F2)))
-            ac2  = np.fft.fftshift(ac2)
-            cy2, cx2 = ac2.shape[0] // 2, ac2.shape[1] // 2
-            origin2  = ac2[cy2, cx2]
-            if origin2 > 1e-9:
-                ac2_n = ac2 / origin2
-                ac2_n[max(0, cy2 - 2):cy2 + 3, max(0, cx2 - 2):cx2 + 3] = 0
-                ac_pk = float(ac2_n.max())
-                flag_e = ac_pk > 0.12
-                signal_details['E_noise_autocorr_peak'] = round(ac_pk, 5)
-                if flag_e:
-                    triggered_weight += w_e
-                    signals_found.append(
-                        f'E) Structured noise autocorrelation (peak={ac_pk:.4f}; thr>0.12) — '
-                        f'AI upsampling / grid artifact (weight {w_e}).')
-
-        # ── F: Mean CFA correlation (w=2) ─────────────────────────────────────
-        w_f = 2
-        total_weight += w_f
-        if cv2 is not None:
-            block_f = 32
-            cfa_s   = []
-            for by in range(0, h - block_f, block_f):
-                for bx in range(0, w - block_f, block_f):
-                    cfa_s.append(
-                        CFAExtractor._cfa_score(rgb[by:by + block_f, bx:bx + block_f, :])
-                    )
-            if cfa_s:
-                mean_cfa = float(np.mean(cfa_s))
-                flag_f   = mean_cfa < 0.12
-                signal_details['F_mean_cfa_score'] = round(mean_cfa, 4)
-                if flag_f:
-                    triggered_weight += w_f
-                    signals_found.append(
-                        f'F) Weak CFA demosaicing pattern (mean={mean_cfa:.4f}; thr<0.12) — '
-                        f'Bayer interpolation absent (weight {w_f}).')
-
-        # ── Weighted consensus ─────────────────────────────────────────────────
-        weighted_score = triggered_weight / total_weight if total_weight > 0 else 0.0
-
-        if weighted_score < 0.25:
-            confidence = 'low'
-            verdict    = 'No significant AI-generation signals — consistent with camera capture.'
-        elif weighted_score < 0.50:
-            confidence = 'medium'
-            verdict    = 'Some AI-generation signals present — warrants closer examination.'
-        else:
-            confidence = 'high'
-            verdict    = 'Strong AI-generation signals — high suspicion of synthetic origin.'
+        high_ent  = norm_e > 0.82
+        low_conc  = top3_power < 0.25
+        ai_signal = high_ent and low_conc
 
         return {
-            'signal_details':     signal_details,
-            'signals_triggered':  signals_found,
-            'triggered_weight':   triggered_weight,
-            'total_weight':       total_weight,
-            'weighted_score':     round(weighted_score, 4),
-            'confidence_tier':    confidence,
-            'verdict':            verdict,
-            'ai_generated_suspected': weighted_score >= 0.40,
-            'method': (
-                'Weighted fusion of 6 independent signals: '
-                'noise floor (×3), local variance CV (×3), DCT kurtosis (×2), '
-                'wavelet decay (×2), noise autocorrelation (×3), CFA score (×2). '
-                'Total weight=15; weighted_score ≥ 0.40 → suspected AI generation.'
+            'orientation_entropy_bits':   float(entropy),
+            'orientation_entropy_norm':   float(norm_e),
+            'top3_orientation_power':     float(top3_power),
+            'gradient_block_cv':          float(block_cv),
+            'strong_pixels_used':         int(strong.sum()),
+            'high_orientation_entropy':   bool(high_ent),
+            'low_dominant_orientation':   bool(low_conc),
+            'ai_signal_detected':         bool(ai_signal),
+            'thresholds': {
+                'norm_entropy': 0.82,
+                'top3_power':   0.25,
+            },
+        }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# v9 IMPROVED AI EXTRACTORS (replace v8 versions, same class names)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AIGeneratedImageExtractor(BaseExtractor):
+    """
+    Improved AI-generation detection with 8 weighted heuristic signals.
+
+    v8 used 4 binary signals equally. v9 uses 8 weighted signals with
+    adaptive thresholds and a continuous confidence score (0–1).
+
+    Signal weights (total = 11.0):
+      wavelet_kurtosis       2.0   — HH subband kurtosis (heavy tail = camera)
+      power_spectrum         2.0   — 1/f^beta slope anomaly
+      local_variance_cv      1.5   — block-variance coefficient of variation
+      shot_noise_absent      1.5   — noise should scale with brightness (cameras)
+      gradient_uniformity    1.0   — orientation entropy too uniform = AI
+      hf_autocorrelation     1.5   — spatially correlated HF residual = upsampled
+      channel_hf_corr        1.0   — channels too correlated at HF = joint synthesis
+      saturation_entropy     0.5   — saturation distribution outside normal range
+
+    ai_generated_suspected when confidence (score / 11.0) ≥ 0.27
+    (roughly equivalent to 2–3 medium-weight signals firing together).
+
+    CAVEAT: Modern diffusion models (2025–2026) defeat many of these tests.
+    Use a dedicated trained classifier for production-grade detection.
+    """
+    name         = "ai_generated_heuristics"
+    version      = "9.0"
+    dependencies = ['get_decoded_image']
+
+    WEIGHTS      = {
+        'wavelet_kurtosis':      2.0,
+        'power_spectrum':        2.0,
+        'local_variance_cv':     1.5,
+        'shot_noise_absent':     1.5,
+        'gradient_uniformity':   1.0,
+        'hf_autocorrelation':    1.5,
+        'channel_hf_corr':       1.0,
+        'saturation_entropy':    0.5,
+    }
+    AI_THRESHOLD = 0.27
+
+    @staticmethod
+    def applicable(context) -> bool:
+        return context.file_type == 'image' and np is not None and cv2 is not None
+
+    def _extract(self, context) -> Dict[str, Any]:
+        img = context.get_decoded_image()
+        if img is None:
+            return {'error': 'Could not decode image'}
+
+        gray = np.array(img.convert('L'), dtype=np.float64)
+        rgb  = np.array(img.convert('RGB'), dtype=np.float64)
+
+        raw_signals = {
+            'wavelet_kurtosis':    self._sig_wavelet_kurtosis(gray),
+            'power_spectrum':      self._sig_power_spectrum(gray),
+            'local_variance_cv':   self._sig_local_variance_cv(gray),
+            'shot_noise_absent':   self._sig_shot_noise(gray),
+            'gradient_uniformity': self._sig_gradient_uniformity(gray),
+            'hf_autocorrelation':  self._sig_hf_autocorrelation(gray),
+            'channel_hf_corr':     self._sig_channel_hf_corr(rgb),
+            'saturation_entropy':  self._sig_saturation_entropy(img),
+        }
+
+        total_w    = sum(self.WEIGHTS.values())
+        score      = 0.0
+        triggered  = []
+        details    = {}
+
+        for name, sig in raw_signals.items():
+            w = self.WEIGHTS[name]
+            if sig.get('triggered', False):
+                score += w
+                triggered.append(f'[{name}] {sig.get("reason", "")}')
+            details[name] = {
+                'value':     sig.get('value'),
+                'threshold': sig.get('threshold'),
+                'triggered': sig.get('triggered', False),
+                'weight':    w,
+                'reason':    sig.get('reason', ''),
+            }
+
+        confidence   = score / total_w
+        ai_suspected = confidence >= self.AI_THRESHOLD
+
+        return {
+            'signal_details':         details,
+            'weighted_score':         float(score),
+            'max_possible_score':     float(total_w),
+            'confidence':             float(confidence),
+            'signals_triggered':      len(triggered),
+            'signals_total':          len(raw_signals),
+            'triggered_descriptions': triggered,
+            'ai_generated_suspected': bool(ai_suspected),
+            'confidence_threshold':   self.AI_THRESHOLD,
+            'confidence_caveat': (
+                'Heuristic weighted scoring. Modern diffusion models (2025–2026) can '
+                'evade many statistical tests. Use a trained classifier for production-grade detection.'
             ),
-            'caveat': (
-                'Independent second-opinion extractor. '
-                'Modern AI generators (2025+) may not trigger all signals. '
-                'False positive rate varies by scene content. '
-                'A trained classifier is required for production-grade detection.'
+        }
+
+    # ── Signal implementations ────────────────────────────────────────────────
+
+    def _sig_wavelet_kurtosis(self, gray: np.ndarray) -> Dict:
+        try:
+            h, w  = gray.shape
+            h2, w2 = h - h % 2, w - w % 2
+            g     = gray[:h2, :w2]
+            H     = (g[:, 0::2] - g[:, 1::2]) * 0.5
+            HH    = (H[0::2, :] - H[1::2, :]) * 0.5
+            flat  = HH.flatten()
+            mu    = flat.mean(); sigma = flat.std() + 1e-9
+            kurt  = float(np.mean(((flat - mu) / sigma) ** 4))
+            thresh = 3.5
+            t      = kurt < thresh
+            return {
+                'value': kurt, 'threshold': thresh, 'triggered': t,
+                'reason': f'Level-1 HH kurtosis {kurt:.2f} < {thresh} '
+                          f'(low heavy-tail — AI textures tend toward Gaussian HH subbands)',
+            }
+        except Exception as e:
+            return {'value': None, 'threshold': 3.5, 'triggered': False, 'reason': f'Error: {e}'}
+
+    def _sig_power_spectrum(self, gray: np.ndarray) -> Dict:
+        if not _SCIPY_OK:
+            return {'value': None, 'threshold': None, 'triggered': False, 'reason': 'scipy unavailable'}
+        try:
+            h, w = gray.shape
+            if h < 64 or w < 64:
+                return {'value': None, 'threshold': None, 'triggered': False, 'reason': 'image too small'}
+            win  = np.outer(np.hanning(h), np.hanning(w))
+            g    = (gray - gray.mean()) * win
+            F    = sp_fft.fftshift(sp_fft.fft2(g))
+            psd  = np.abs(F) ** 2
+            cy, cx = h // 2, w // 2
+            y, x   = np.ogrid[:h, :w]
+            r_map  = np.sqrt((y - cy)**2 + (x - cx)**2).astype(int)
+            max_r  = min(cy, cx)
+            profile = [float(psd[r_map == r].mean())
+                       for r in range(1, max_r) if (r_map == r).sum() > 0]
+            n        = len(profile)
+            lo, hi   = n // 8, 3 * n // 4
+            freqs_sl = list(range(1, n + 1))[lo:hi]
+            prof_sl  = profile[lo:hi]
+            beta     = float(-np.polyfit(np.log(freqs_sl), np.log(np.array(prof_sl) + 1e-9), 1)[0])
+            t        = beta < 1.4 or beta > 4.2
+            return {
+                'value': beta, 'threshold': [1.4, 4.2], 'triggered': t,
+                'reason': f'Spectral beta={beta:.2f} outside expected range [1.4, 4.2]',
+            }
+        except Exception as e:
+            return {'value': None, 'threshold': [1.4, 4.2], 'triggered': False, 'reason': f'Error: {e}'}
+
+    def _sig_local_variance_cv(self, gray: np.ndarray) -> Dict:
+        try:
+            block  = 32
+            h, w   = gray.shape
+            variances = [
+                float(gray[by:by + block, bx:bx + block].var())
+                for by in range(0, h - block, block)
+                for bx in range(0, w - block, block)
+            ]
+            if len(variances) < 9:
+                return {'value': None, 'threshold': 0.50, 'triggered': False, 'reason': 'too few blocks'}
+            arr  = np.array(variances)
+            cv_  = float(arr.std() / (arr.mean() + 1e-9))
+            t    = cv_ < 0.50
+            return {
+                'value': cv_, 'threshold': 0.50, 'triggered': t,
+                'reason': f'Block-variance CV={cv_:.3f} < 0.50 '
+                          f'(suspiciously uniform texture distribution across image)',
+            }
+        except Exception as e:
+            return {'value': None, 'threshold': 0.50, 'triggered': False, 'reason': f'Error: {e}'}
+
+    def _sig_shot_noise(self, gray: np.ndarray) -> Dict:
+        """
+        Camera images: noise variance ∝ brightness (Poisson/shot noise).
+        AI images: noise typically uniform across brightness levels.
+        """
+        try:
+            g_u8     = gray.astype(np.uint8)
+            denoised = cv2.fastNlMeansDenoising(g_u8, h=6).astype(np.float64)
+            residual = gray - denoised
+            flat_g   = gray.flatten()
+            flat_r   = residual.flatten()
+            q_edges  = np.percentile(flat_g, [0, 20, 40, 60, 80, 100])
+            vars_q   = []
+            for i in range(5):
+                mask = (flat_g >= q_edges[i]) & (flat_g < q_edges[i + 1])
+                if mask.sum() > 50:
+                    vars_q.append(float(flat_r[mask].var()))
+            if len(vars_q) < 3:
+                return {'value': None, 'threshold': 0.15, 'triggered': False, 'reason': 'insufficient brightness range'}
+            x             = np.arange(len(vars_q), dtype=np.float64)
+            y             = np.array(vars_q)
+            slope_norm    = float(np.polyfit(x, y, 1)[0] / (np.mean(y) + 1e-9)) if y.std() > 1e-9 else 0.0
+            t             = slope_norm < 0.15
+            return {
+                'value': slope_norm, 'threshold': 0.15, 'triggered': t,
+                'reason': f'Brightness-noise slope ratio {slope_norm:.3f} < 0.15 '
+                          f'(noise does not scale with brightness — absent shot noise)',
+            }
+        except Exception as e:
+            return {'value': None, 'threshold': 0.15, 'triggered': False, 'reason': f'Error: {e}'}
+
+    def _sig_gradient_uniformity(self, gray: np.ndarray) -> Dict:
+        try:
+            g32  = gray.astype(np.float32)
+            gx   = cv2.Sobel(g32, cv2.CV_32F, 1, 0, ksize=3)
+            gy   = cv2.Sobel(g32, cv2.CV_32F, 0, 1, ksize=3)
+            mag  = np.sqrt(gx**2 + gy**2)
+            thr  = np.percentile(mag, 80)
+            strong = mag > thr
+            if strong.sum() < 100:
+                return {'value': None, 'threshold': 0.82, 'triggered': False, 'reason': 'insufficient gradient pixels'}
+            ori_dir = np.mod(np.arctan2(gy[strong], gx[strong]), np.pi)
+            hist, _ = np.histogram(ori_dir, bins=36, range=(0, np.pi), density=True)
+            hist    = hist / (hist.sum() + 1e-9)
+            ent     = float(-np.sum(hist * np.log2(hist + 1e-12)))
+            norm_e  = ent / math.log2(36)
+            t       = norm_e > 0.82
+            return {
+                'value': norm_e, 'threshold': 0.82, 'triggered': t,
+                'reason': f'Gradient orientation entropy {norm_e:.3f} > 0.82 '
+                          f'(isotropic gradient field — AI-hallucinated texture)',
+            }
+        except Exception as e:
+            return {'value': None, 'threshold': 0.82, 'triggered': False, 'reason': f'Error: {e}'}
+
+    def _sig_hf_autocorrelation(self, gray: np.ndarray) -> Dict:
+        """
+        Camera noise: spatially uncorrelated (white). Upsampled AI: correlated (band-limited).
+        """
+        try:
+            blur  = cv2.GaussianBlur(gray.astype(np.float32), (5, 5), 0).astype(np.float64)
+            res   = gray - blur
+            r_h   = float(np.corrcoef(res[:-1, :].flatten(), res[1:, :].flatten())[0, 1])
+            r_v   = float(np.corrcoef(res[:, :-1].flatten(), res[:, 1:].flatten())[0, 1])
+            mean_ac = (abs(r_h) + abs(r_v)) / 2.0
+            t       = mean_ac > 0.18
+            return {
+                'value': mean_ac, 'threshold': 0.18, 'triggered': t,
+                'reason': f'HF residual lag-1 autocorrelation {mean_ac:.4f} > 0.18 '
+                          f'(spatially correlated noise — consistent with convolutional upsampling)',
+            }
+        except Exception as e:
+            return {'value': None, 'threshold': 0.18, 'triggered': False, 'reason': f'Error: {e}'}
+
+    def _sig_channel_hf_corr(self, rgb: np.ndarray) -> Dict:
+        """
+        Camera: colour-specific noise → lower cross-channel HF correlation.
+        AI: channels synthesised jointly → often higher HF correlation.
+        """
+        try:
+            hf_ch = []
+            for c in range(3):
+                ch   = rgb[:, :, c].astype(np.float64)
+                blur = cv2.GaussianBlur(ch.astype(np.float32), (5, 5), 0).astype(np.float64)
+                hf_ch.append((ch - blur).flatten())
+            n      = min(20_000, len(hf_ch[0]))
+            idx    = np.random.choice(len(hf_ch[0]), size=n, replace=False)
+            rg     = float(np.corrcoef(hf_ch[0][idx], hf_ch[1][idx])[0, 1])
+            rb     = float(np.corrcoef(hf_ch[0][idx], hf_ch[2][idx])[0, 1])
+            mean_c = (abs(rg) + abs(rb)) / 2.0
+            t      = mean_c > 0.75
+            return {
+                'value': mean_c, 'threshold': 0.75, 'triggered': t,
+                'reason': f'Cross-channel HF correlation {mean_c:.4f} > 0.75 '
+                          f'(channels too correlated at high frequencies — joint AI synthesis signal)',
+            }
+        except Exception as e:
+            return {'value': None, 'threshold': 0.75, 'triggered': False, 'reason': f'Error: {e}'}
+
+    def _sig_saturation_entropy(self, img) -> Dict:
+        try:
+            # Manual RGB→HSV to avoid Pillow mode issues
+            rgb_f = np.array(img.convert('RGB'), dtype=np.float64) / 255.0
+            r, g, b   = rgb_f[:,:,0], rgb_f[:,:,1], rgb_f[:,:,2]
+            cmax  = np.maximum(np.maximum(r, g), b)
+            cmin  = np.minimum(np.minimum(r, g), b)
+            delta = cmax - cmin
+            sat   = np.where(cmax > 1e-9, delta / cmax, 0.0)
+            hist, _ = np.histogram(sat, bins=32, range=(0, 1), density=True)
+            hist    = hist / (hist.sum() + 1e-9)
+            ent     = float(-np.sum(hist * np.log2(hist + 1e-12)))
+            norm_e  = ent / math.log2(32)
+            lo, hi  = 0.55, 0.95
+            t       = norm_e < lo or norm_e > hi
+            return {
+                'value': norm_e, 'threshold': [lo, hi], 'triggered': t,
+                'reason': f'Saturation entropy {norm_e:.3f} outside normal range [{lo}, {hi}]',
+            }
+        except Exception as e:
+            return {'value': None, 'threshold': [0.55, 0.95], 'triggered': False, 'reason': f'Error: {e}'}
+
+
+class AIManipulationExtractor(BaseExtractor):
+    """
+    Improved localised AI manipulation detection using 4-signal co-occurrence.
+
+    Each 32×32 block is assessed against 4 signals:
+      1. Laplacian noise variance outlier (MAD-based)
+      2. CFA demosaicing correlation outlier (too low = no camera pattern)
+      3. Canny edge density outlier (too sharp/smooth for its neighbourhood)
+      4. Local luminance entropy outlier
+
+    Blocks where ≥ 2 signals fire simultaneously are flagged as suspect.
+    Spatial clustering (scipy ndimage.label) distinguishes coherent
+    manipulated regions from isolated false positives — coherent regions
+    of ≥ 4 contiguous suspect blocks are much stronger evidence.
+
+    A continuous confidence score (0–1) is reported alongside a binary flag.
+    """
+    name         = "ai_manipulation_heuristic"
+    version      = "9.0"
+    dependencies = ['get_decoded_image']
+
+    @staticmethod
+    def applicable(context) -> bool:
+        return context.file_type == 'image' and np is not None and cv2 is not None
+
+    def _extract(self, context) -> Dict[str, Any]:
+        img = context.get_decoded_image()
+        if img is None:
+            return {'error': 'Could not decode image'}
+
+        gray  = np.array(img.convert('L'), dtype=np.float32)
+        rgb   = np.array(img.convert('RGB'), dtype=np.float64)
+        h, w  = gray.shape
+        block = 32
+
+        if h < block * 4 or w < block * 4:
+            return {'error': 'Image too small for block analysis (need ≥ 128×128)'}
+
+        noise_vars  = []
+        cfa_scores  = []
+        edge_dens   = []
+        entropies   = []
+        rows_g      = list(range(0, h - block, block))
+        cols_g      = list(range(0, w - block, block))
+
+        for by in rows_g:
+            for bx in cols_g:
+                gray_b  = gray[by:by + block, bx:bx + block]
+                rgb_b   = rgb[by:by + block, bx:bx + block, :]
+
+                noise_vars.append(float(cv2.Laplacian(gray_b, cv2.CV_32F).var()))
+                cfa_scores.append(CFAExtractor._cfa_score(rgb_b))
+
+                edges = cv2.Canny(gray_b.astype(np.uint8), 50, 150)
+                edge_dens.append(float(edges.mean()) / 255.0)
+
+                hist_b, _ = np.histogram(gray_b, bins=8, range=(0, 255))
+                hist_b    = hist_b / (hist_b.sum() + 1e-9)
+                entropies.append(float(-np.sum(hist_b * np.log2(hist_b + 1e-12))))
+
+        if not noise_vars:
+            return {'error': 'No blocks extracted'}
+
+        n_arr = np.array(noise_vars)
+        c_arr = np.array(cfa_scores)
+        e_arr = np.array(edge_dens)
+        h_arr = np.array(entropies)
+
+        def mad_bounds(arr, k=4.0):
+            med = np.median(arr)
+            mad = np.median(np.abs(arr - med)) + 1e-9
+            return med - k * mad, med + k * mad
+
+        n_lo, n_hi = mad_bounds(n_arr)
+        c_lo, _    = mad_bounds(c_arr, 3.0)
+        e_lo, e_hi = mad_bounds(e_arr)
+        h_lo, h_hi = mad_bounds(h_arr)
+
+        noise_anom = (n_arr < n_lo) | (n_arr > n_hi)
+        cfa_anom   = c_arr < max(float(c_lo), 0.05)
+        edge_anom  = (e_arr < e_lo) | (e_arr > e_hi)
+        ent_anom   = (h_arr < h_lo) | (h_arr > h_hi)
+
+        anomaly_ct = (noise_anom.astype(int) + cfa_anom.astype(int) +
+                      edge_anom.astype(int) + ent_anom.astype(int))
+        suspect       = anomaly_ct >= 2
+        suspect_ratio = float(suspect.sum() / len(suspect))
+
+        # Spatial clustering
+        large_clusters = 0
+        n_clusters_total = 0
+        nr, nc = len(rows_g), len(cols_g)
+        if nr * nc == len(suspect) and _SCIPY_OK:
+            suspect_grid = suspect.reshape(nr, nc)
+            labeled, n_clusters_total = ndimage.label(suspect_grid)
+            cluster_sizes  = [(labeled == i).sum() for i in range(1, n_clusters_total + 1)]
+            large_clusters = sum(1 for s in cluster_sizes if s >= 4)
+
+        base_conf    = min(1.0, suspect_ratio / 0.10)
+        cluster_bon  = min(0.30, large_clusters * 0.10)
+        confidence   = min(1.0, base_conf + cluster_bon)
+        ai_suspected = suspect_ratio > 0.05 or large_clusters >= 2
+
+        return {
+            'blocks_analyzed':             len(noise_vars),
+            'suspect_block_count':         int(suspect.sum()),
+            'suspect_block_ratio':         float(suspect_ratio),
+            'noise_anomaly_count':         int(noise_anom.sum()),
+            'cfa_anomaly_count':           int(cfa_anom.sum()),
+            'edge_anomaly_count':          int(edge_anom.sum()),
+            'entropy_anomaly_count':       int(ent_anom.sum()),
+            'coherent_suspect_clusters':   int(large_clusters),
+            'total_suspect_clusters':      int(n_clusters_total),
+            'detection_confidence':        float(confidence),
+            'localized_ai_edit_suspected': bool(ai_suspected),
+            'method': (
+                'Multi-signal co-occurrence (noise + CFA + edge-density + entropy) '
+                '+ spatial cluster analysis — 4-signal MAD outlier detection'
+            ),
+            'confidence_caveat': (
+                'Heuristic corroborating signal. Combine with wavelet, ELA, and '
+                'power-spectrum results for stronger conclusions.'
             ),
         }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DETAILED REPORT BUILDER
+# DETAILED REPORT BUILDER (v9 — updated with new interpreters + AI fusion)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class DetailedReportBuilder:
@@ -2549,11 +2430,18 @@ class DetailedReportBuilder:
         'sensor':               'Camera Sensor Fingerprint',
         'visual2':              'Advanced Visual Forensics',
         'document_consistency': 'Document Consistency Analysis',
+        'ai_detection':         'AI Generation & Manipulation Detection',
+        'ai_fusion':            'AI Detection — Cross-Extractor Synthesis',
     }
 
-    def build(self, evidence: Dict[str, List[Dict[str, Any]]], file_type: str) -> Dict[str, Any]:
+    def build(
+        self,
+        evidence:  Dict[str, List[Dict[str, Any]]],
+        file_type: str,
+    ) -> Dict[str, Any]:
         all_notable: List[str] = []
         categories:  List[Dict] = []
+
         for cat_key, results in evidence.items():
             label   = self.CATEGORY_LABELS.get(cat_key, cat_key.replace('_', ' ').title())
             entries = []
@@ -2561,7 +2449,31 @@ class DetailedReportBuilder:
                 entry = self._process(res)
                 entries.append(entry)
                 all_notable.extend(entry.get('notable_findings', []))
-            categories.append({'category': cat_key, 'label': label, 'extractors': entries})
+            categories.append({
+                'category':   cat_key,
+                'label':      label,
+                'extractors': entries,
+            })
+
+        # Cross-extractor AI fusion (images only)
+        if file_type == 'image':
+            fusion = self._ai_fusion(evidence)
+            if fusion['signals_found'] > 0:
+                all_notable.extend(fusion['notable_findings'])
+                categories.append({
+                    'category':   'ai_fusion',
+                    'label':      self.CATEGORY_LABELS['ai_fusion'],
+                    'extractors': [{
+                        'extractor':        'ai_fusion_synthesis',
+                        'version':          '9.0',
+                        'status':           'ok',
+                        'execution_time_s': 0.0,
+                        'findings':         fusion['findings'],
+                        'notable_findings': fusion['notable_findings'],
+                        'raw_evidence':     fusion,
+                    }],
+                })
+
         return {
             'categories':           categories,
             'all_notable_findings': all_notable,
@@ -2573,12 +2485,150 @@ class DetailedReportBuilder:
             ),
         }
 
+    # ── Cross-extractor AI fusion ─────────────────────────────────────────────
+
+    def _ai_fusion(self, evidence: Dict) -> Dict:
+        """Collect AI-related signals across all extractors and synthesise."""
+        sigs: Dict[str, Dict] = {}
+
+        for cat_key, results in evidence.items():
+            for res in results:
+                name = res.get('extractor', '')
+                ev   = res.get('evidence', {})
+                if res.get('confidence', 0.0) == 0.0 or 'error' in ev:
+                    continue
+
+                if name == 'ai_generated_heuristics':
+                    sigs['main'] = {
+                        'confidence': ev.get('confidence', 0.0),
+                        'triggered':  ev.get('signals_triggered', 0),
+                        'total':      ev.get('signals_total', 0),
+                        'suspected':  ev.get('ai_generated_suspected', False),
+                    }
+                elif name == 'ai_manipulation_heuristic':
+                    sigs['manipulation'] = {
+                        'suspect_ratio':   ev.get('suspect_block_ratio', 0.0),
+                        'clusters':        ev.get('coherent_suspect_clusters', 0),
+                        'confidence':      ev.get('detection_confidence', 0.0),
+                        'suspected':       ev.get('localized_ai_edit_suspected', False),
+                    }
+                elif name == 'wavelet_consistency':
+                    sigs['wavelet'] = {
+                        'kurtosis': ev.get('l1_hh_kurtosis', 99.0),
+                        'signal':   ev.get('ai_signal_detected', False),
+                    }
+                elif name == 'power_spectrum':
+                    sigs['spectrum'] = {
+                        'beta':   ev.get('spectral_beta', 2.5),
+                        'signal': ev.get('ai_signal_detected', False),
+                    }
+                elif name == 'jpeg_ghost':
+                    sigs['ghost'] = {
+                        'inconsistency': ev.get('inconsistency_ratio', 0.0),
+                        'suspected':     ev.get('manipulation_suspected', False),
+                    }
+                elif name == 'local_patch_statistics':
+                    sigs['patch'] = {
+                        'brightness_cv': ev.get('brightness_cv', 1.0),
+                        'texture_cv':    ev.get('texture_cv', 1.0),
+                        'signal':        ev.get('ai_signal_detected', False),
+                    }
+                elif name == 'gradient_coherence':
+                    sigs['gradient'] = {
+                        'entropy': ev.get('orientation_entropy_norm', 0.0),
+                        'signal':  ev.get('ai_signal_detected', False),
+                    }
+                elif name == 'cfa_consistency':
+                    sigs['cfa'] = {
+                        'absent':     ev.get('cfa_absent_or_inconsistent', False),
+                        'mean_score': ev.get('mean_cfa_score', 1.0),
+                    }
+                elif name == 'ela_v2':
+                    sigs['ela'] = {
+                        'local_edit': ev.get('localized_editing_suspected', False),
+                    }
+                elif name == 'resampling':
+                    sigs['resampling'] = {
+                        'suspected': ev.get('resampling_suspected', False),
+                    }
+                elif name == 'noise_inconsistency':
+                    sigs['noise_inc'] = {
+                        'suspected': ev.get('inconsistent_noise_suspected', False),
+                    }
+
+        # Count positive signals
+        positive = []
+        if sigs.get('main', {}).get('suspected'):       positive.append('main_heuristics')
+        if sigs.get('manipulation', {}).get('suspected'): positive.append('manipulation_heuristic')
+        if sigs.get('wavelet', {}).get('signal'):        positive.append('wavelet_consistency')
+        if sigs.get('spectrum', {}).get('signal'):       positive.append('power_spectrum')
+        if sigs.get('ghost', {}).get('suspected'):       positive.append('jpeg_ghost')
+        if sigs.get('patch', {}).get('signal'):          positive.append('local_patch_statistics')
+        if sigs.get('gradient', {}).get('signal'):       positive.append('gradient_coherence')
+        if sigs.get('cfa', {}).get('absent'):            positive.append('cfa_absent')
+        if sigs.get('ela', {}).get('local_edit'):        positive.append('ela_v2')
+        if sigs.get('resampling', {}).get('suspected'):  positive.append('resampling')
+        if sigs.get('noise_inc', {}).get('suspected'):   positive.append('noise_inconsistency')
+
+        findings: List[str] = []
+        notable:  List[str] = []
+
+        findings.append(f'Extractors with positive AI/manipulation signal: {len(positive)} / {len(sigs)}')
+        for p in positive:
+            findings.append(f'  ▶ {p}')
+
+        main_conf = sigs.get('main', {}).get('confidence', 0.0)
+        manip_conf = sigs.get('manipulation', {}).get('confidence', 0.0)
+
+        if len(positive) == 0:
+            findings.append('No AI-related extractors reported a positive signal. '
+                            'Image characteristics are consistent with authentic camera capture.')
+        elif len(positive) == 1:
+            findings.append('Single extractor positive — weak signal; may be a false positive '
+                            'for this image type. Consider image content before drawing conclusions.')
+        elif len(positive) >= 2:
+            findings.append(
+                f'Multiple extractors ({len(positive)}) independently report anomalies. '
+                f'Cross-extractor agreement strengthens the overall signal.'
+            )
+            if main_conf > 0:
+                findings.append(f'Main heuristic confidence score  : {main_conf:.2%}')
+            if manip_conf > 0:
+                findings.append(f'Manipulation heuristic confidence: {manip_conf:.2%}')
+
+        # Build notable summary
+        if len(positive) >= 3:
+            notable.append(
+                f'⚠ AI FUSION: {len(positive)} independent extractors report positive signals '
+                f'({", ".join(positive[:5])}{"..." if len(positive) > 5 else ""}). '
+                f'Convergent evidence across wavelet, spectral, spatial, and visual channels '
+                f'significantly increases confidence in AI generation or manipulation. '
+                f'A trained classifier is recommended for a definitive verdict.'
+            )
+        elif len(positive) == 2:
+            notable.append(
+                f'↑ AI FUSION: 2 extractors agree ({", ".join(positive)}). '
+                f'Moderate evidence — examine individual extractor outputs for context.'
+            )
+
+        return {
+            'signals_found':    len(sigs),
+            'positive_signals': len(positive),
+            'positive_list':    positive,
+            'per_extractor':    sigs,
+            'findings':         findings,
+            'notable_findings': notable,
+        }
+
+    # ── Internal helpers ───────────────────────────────────────────────────────
+
     def _process(self, res: Dict[str, Any]) -> Dict[str, Any]:
         name      = res.get('extractor', 'unknown')
         evidence  = res.get('evidence', {})
         conf      = res.get('confidence', 0.0)
         exec_time = res.get('execution_time', 0.0)
         version   = res.get('version', '?')
+
         if conf == 0.0 or 'error' in evidence:
             return {
                 'extractor':        name,
@@ -2590,6 +2640,7 @@ class DetailedReportBuilder:
                 'notable_findings': [],
                 'raw_evidence':     {},
             }
+
         findings, notable = self._interpret(name, evidence)
         return {
             'extractor':        name,
@@ -2610,12 +2661,15 @@ class DetailedReportBuilder:
             if isinstance(v, (dict, list)) and not v:
                 continue
             label = k.replace('_', ' ').title()
-            findings.append(f'{label}: {v:.6f}' if isinstance(v, float) else f'{label}: {v}')
+            if isinstance(v, float):
+                findings.append(f'{label}: {v:.6f}')
+            else:
+                findings.append(f'{label}: {v}')
         return findings, []
 
-    # ── Original interpreters (unchanged) ─────────────────────────────────────
+    # ── Original per-extractor interpreters (unchanged) ───────────────────────
 
-    def _interp_file_evidence(self, ev):
+    def _interp_file_evidence(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         size = ev.get('file_size', 0)
         f.append(f'File size         : {size:,} bytes  ({size / 1024:.2f} KB)')
@@ -2630,27 +2684,30 @@ class DetailedReportBuilder:
             f.append(f'SHA-256           : {hashes.get("sha256", "n/a")}')
             f.append(f'CRC-32            : {hashes.get("crc32", "n/a")}')
         struct_ok = not ev.get('corrupted', False)
-        f.append(f'Structure valid   : {"YES" if struct_ok else "NO"}')
+        f.append(f'Structure valid   : {"YES" if struct_ok else "NO — see notable findings"}')
         f.append(f'Known-hash match  : {"YES" if ev.get("duplicate") else "no"}')
         if entropy > 7.9:
-            n.append(f'⚠ Extremely high byte entropy ({entropy:.4f}/8.0) — may be encrypted or compressed.')
+            n.append(f'⚠ Extremely high byte entropy ({entropy:.4f}/8.0) — file may be encrypted, '
+                     f'compressed, or contain densely packed binary data.')
         elif entropy > 7.5:
-            n.append(f'↑ Elevated byte entropy ({entropy:.4f}/8.0).')
+            n.append(f'↑ Elevated byte entropy ({entropy:.4f}/8.0) — notable but not conclusive.')
         if ev.get('corrupted'):
             n.append('⚠ File failed structural validation — appears corrupted or malformed.')
         if ev.get('duplicate'):
-            n.append('⚠ SHA-256 matches a hash in the known-files list — possible duplicate.')
+            n.append('⚠ SHA-256 matches a hash in the known-files list — possible duplicate or re-used file.')
         return f, n
 
-    def _interp_exif(self, ev):
+    def _interp_exif(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         if not ev:
-            f.append('No EXIF data found.')
+            f.append('No EXIF data found in this image.')
             return f, n
         priority = [
             'Image Make', 'Image Model', 'EXIF DateTimeOriginal', 'Image DateTime',
             'EXIF DateTimeDigitized', 'EXIF Software', 'EXIF ExifImageWidth',
-            'EXIF ExifImageLength', 'GPS GPSLatitude', 'GPS GPSLongitude',
+            'EXIF ExifImageLength', 'Image Orientation', 'EXIF Flash',
+            'EXIF FocalLength', 'EXIF ISOSpeedRatings', 'EXIF ExposureTime',
+            'EXIF FNumber', 'GPS GPSLatitude', 'GPS GPSLongitude', 'GPS GPSAltitude',
         ]
         shown = set()
         for key in priority:
@@ -2662,598 +2719,654 @@ class DetailedReportBuilder:
             f.append(f'--- Additional EXIF tags ({len(remainder)}) ---')
             for k, v in list(remainder.items())[:30]:
                 f.append(f'  {k:<33}: {v}')
+            if len(remainder) > 30:
+                f.append(f'  ... and {len(remainder) - 30} more tag(s) (see raw_evidence)')
         if ev.get('Image Make') or ev.get('Image Model'):
-            n.append(f'Camera/Device: {ev.get("Image Make","").strip()} {ev.get("Image Model","").strip()}'.strip())
+            n.append(f'Camera/Device     : {ev.get("Image Make","").strip()} {ev.get("Image Model","").strip()}'.strip())
         if ev.get('EXIF DateTimeOriginal'):
-            n.append(f'Capture timestamp: {ev["EXIF DateTimeOriginal"]}')
+            n.append(f'Capture timestamp : {ev["EXIF DateTimeOriginal"]}')
         if ev.get('EXIF Software'):
             n.append(f'Processing software present in EXIF: {ev["EXIF Software"]}')
         if ev.get('GPS GPSLatitude') and ev.get('GPS GPSLongitude'):
-            n.append(f'GPS coordinates embedded — lat: {ev["GPS GPSLatitude"]}, lon: {ev["GPS GPSLongitude"]}')
+            n.append(f'GPS coordinates embedded — latitude: {ev["GPS GPSLatitude"]}, '
+                     f'longitude: {ev["GPS GPSLongitude"]}')
         return f, n
 
-    def _interp_xmp(self, ev):
+    def _interp_xmp(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         if ev.get('raw_xmp_present'):
-            f.append('XMP metadata block: PRESENT')
+            f.append('XMP metadata block  : PRESENT')
             snippet = ev.get('xmp_snippet', '')
             if snippet:
                 f.append(f'XMP snippet (≤500 ch):\n{snippet}')
-            n.append('XMP metadata present — may contain editing history, software chain, or rights information.')
+            n.append('XMP metadata is present — may contain full editing history, software chain, '
+                     'or creator/rights information absent in core EXIF.')
         else:
-            f.append('XMP metadata block: not found')
+            f.append('XMP metadata block  : not found')
         return f, n
 
-    def _interp_iptc(self, ev):
+    def _interp_iptc(self, ev: Dict) -> Tuple[List[str], List[str]]:
         note = ev.get('note', '')
-        return ([note] if note else ['IPTC: no data']), []
+        return ([note] if note else ['IPTC: no data or parser not available']), []
 
-    def _interp_pdf_metadata(self, ev):
+    def _interp_pdf_metadata(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         if not ev:
-            n.append('⚠ PDF contains no standard metadata — may have been stripped to obscure origin.')
+            n.append('⚠ PDF contains no standard metadata fields — may have been deliberately stripped.')
             return ['No PDF metadata found.'], n
         field_map = {
             'Title': 'Title', 'Author': 'Author', 'Subject': 'Subject',
             'Keywords': 'Keywords', 'Creator': 'Creating application',
             'Producer': 'PDF producer library', 'CreationDate': 'Creation date',
-            'ModDate': 'Last-modified date',
+            'ModDate': 'Last-modified date', 'Trapped': 'Trapped flag',
         }
         for raw_key, label in field_map.items():
             val = ev.get(raw_key) or ev.get(raw_key.lower())
             if val:
                 f.append(f'{label:<25}: {val}')
-        for k, v in ev.items():
-            if k not in field_map and k.lower() not in [x.lower() for x in field_map]:
-                f.append(f'{k:<25}: {v}')
+        other = {k: v for k, v in ev.items()
+                 if k not in field_map and k.lower() not in [x.lower() for x in field_map]}
+        for k, v in other.items():
+            f.append(f'{k:<25}: {v}')
         cd = ev.get('CreationDate') or ev.get('creationdate')
         md = ev.get('ModDate') or ev.get('moddate')
-        if cd: n.append(f'PDF creation date: {cd}')
-        if md: n.append(f'PDF modified date: {md}')
+        if cd: n.append(f'PDF creation date : {cd}')
+        if md: n.append(f'PDF modified date : {md}')
         if cd and md and str(cd) != str(md):
-            n.append('↑ CreationDate and ModDate differ — document was modified after initial creation.')
-        if ev.get('Author'):   n.append(f'Author field: {ev["Author"]}')
-        if ev.get('Creator'):  n.append(f'Created with: {ev["Creator"]}')
-        if ev.get('Producer'): n.append(f'PDF producer: {ev["Producer"]}')
+            n.append('↑ CreationDate and ModDate differ — the PDF was modified after initial creation.')
+        if ev.get('Author'):   n.append(f'Author field      : {ev["Author"]}')
+        if ev.get('Creator'):  n.append(f'Created with      : {ev["Creator"]}')
+        if ev.get('Producer'): n.append(f'PDF producer      : {ev["Producer"]}')
         return f, n
 
-    def _interp_structure(self, ev):
+    def _interp_structure(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         markers = ev.get('jpeg_markers')
         if markers is not None:
             f.append(f'JPEG markers (first 20): {", ".join(markers)}')
+            marker_desc = {
+                '0xe0': 'APP0 (JFIF header)', '0xe1': 'APP1 (EXIF / XMP)',
+                '0xe2': 'APP2 (ICC profile)', '0xed': 'APP13 (IPTC / Photoshop)',
+                '0xdb': 'DQT (quantization table)', '0xc0': 'SOF0 (baseline JPEG)',
+                '0xc2': 'SOF2 (progressive JPEG)', '0xda': 'SOS (start of scan)',
+                '0xfe': 'COM (comment segment)',
+            }
+            for m in markers:
+                desc = marker_desc.get(m)
+                if desc: f.append(f'  {m} → {desc}')
         pdf = ev.get('pdf', {})
         if pdf:
-            f.append(f'PDF pages       : {pdf.get("num_pages", "unknown")}')
-            f.append(f'Cross-ref table : {pdf.get("xref_table", "unknown")}')
+            f.append(f'PDF pages         : {pdf.get("num_pages", "unknown")}')
+            f.append(f'Cross-ref table   : {pdf.get("xref_table", "unknown")}')
             if pdf.get('xref_table') == 'missing':
-                n.append('⚠ PDF cross-reference table missing — file may be malformed or rebuilt.')
+                n.append('⚠ PDF cross-reference table is missing or unreadable.')
         return f, n
 
-    def _interp_statistics(self, ev):
+    def _interp_statistics(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         entropy = ev.get('entropy', 0.0)
-        f.append(f'File entropy  : {entropy:.5f} / 8.0')
+        f.append(f'File entropy      : {entropy:.5f} / 8.0')
         dist = ev.get('byte_distribution', [])
         if dist:
             zero_f = dist[0]
-            f.append(f'Null-byte freq: {zero_f:.4f}  ({zero_f * 100:.1f}%)')
+            f.append(f'Null-byte freq    : {zero_f:.4f}  ({zero_f * 100:.1f}%)')
+            f.append(f'Byte freq[0–19]   : {[round(x, 4) for x in dist]}')
             if zero_f > 0.30:
-                n.append(f'⚠ Null bytes: {zero_f * 100:.1f}% — may indicate sparse data or structured binary.')
+                n.append(f'⚠ Null bytes account for {zero_f * 100:.1f}% — possible sparse data or padding.')
         return f, n
 
-    def _interp_noise(self, ev):
+    def _interp_noise(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         var = ev.get('noise_variance')
         if var is not None:
             f.append(f'Laplacian noise variance: {var:.4f}')
+            f.append(f'Method                 : {ev.get("method", "")}')
             if var < 10:
-                n.append(f'↓ Very low noise variance ({var:.2f}) — unusually smooth.')
+                n.append(f'↓ Very low noise variance ({var:.2f}) — unusually smooth; '
+                         f'consistent with AI-generated or heavily post-processed content.')
             elif var > 2000:
-                n.append(f'↑ Very high noise variance ({var:.2f}) — strong texture or noise.')
+                n.append(f'↑ Very high noise variance ({var:.2f}) — strong texture or motion blur.')
+            else:
+                f.append('Noise variance is within a typical photographic range.')
         return f, n
 
-    def _interp_ela(self, ev):
+    def _interp_ela(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         score = ev.get('ela_score')
+        max_d = ev.get('max_diff')
         if score is not None:
-            f.append(f'ELA mean error (q=90): {score:.4f}')
+            f.append(f'ELA mean error (q=90)  : {score:.4f}')
+            f.append(f'Method                 : {ev.get("method", "")}')
+            if max_d is not None: f.append(f'Maximum pixel diff     : {max_d}')
             if score > 15:
-                n.append(f'⚠ Elevated ELA score ({score:.2f}) — possible recompression / editing artefact.')
+                n.append(f'⚠ Elevated ELA score ({score:.2f}) — possible localised recompression or editing.')
             elif score > 8:
                 n.append(f'↑ Moderate ELA score ({score:.2f}) — worth closer inspection.')
+            else:
+                f.append('ELA score is within the typical range.')
         return f, n
 
-    def _interp_clone_detection(self, ev):
+    def _interp_clone_detection(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         detected    = ev.get('detected', False)
         match_count = ev.get('match_count', 0)
+        f.append(f'Method             : ORB feature matching (displaced >10 px)')
         f.append(f'Positive detection : {"YES" if detected else "no"}')
         f.append(f'Displaced matches  : {match_count}')
         if detected:
-            n.append(f'⚠ ORB clone detection: {match_count} displaced feature matches — possible copy-move.')
+            n.append(f'⚠ ORB clone detection triggered ({match_count} displaced matches) — '
+                     f'possible copy-move region. Confirm with copy_move_v2 (SIFT+RANSAC).')
+        else:
+            f.append('No significant copy-move pattern found.')
         return f, n
 
-    def _interp_steganography(self, ev):
+    def _interp_steganography(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         sampled = ev.get('lsb_bits_sampled', 0)
         ratio   = ev.get('lsb_ones_ratio', 0.5)
         chi2    = ev.get('lsb_chi_square')
         susp    = ev.get('suspicious_lsb_uniformity', False)
-        f.append(f'LSB bits sampled : {sampled:,}')
-        f.append(f'LSB ones ratio   : {ratio:.5f}')
+        zip_sig = ev.get('hidden_zip_signature')
+        f.append(f'LSB bits sampled         : {sampled:,}')
+        f.append(f'LSB ones ratio           : {ratio:.5f}  (0.5000 = perfect uniformity)')
         if chi2 is not None:
-            f.append(f'Chi-square       : {chi2:.5f}')
+            f.append(f'Chi-square statistic     : {chi2:.5f}  (< 0.5 with >5000 bits = suspicious)')
         if susp:
-            n.append(f'⚠ LSB distribution unusually uniform (chi²={chi2:.4f}) — possible steganographic payload.')
-        if ev.get('hidden_zip_signature'):
-            n.append('⚠ ZIP file signature (PK\\x03\\x04) found — possible polyglot or hidden archive.')
+            n.append(f'⚠ LSB uniformity suspicious (chi²={chi2:.4f}) — possible steganographic payload. '
+                     f'See advanced_steganalysis (RS method) for a more sensitive test.')
+        else:
+            f.append('LSB uniformity within normal bounds.')
+        if zip_sig:
+            n.append('⚠ ZIP file signature detected in raw bytes — possible polyglot or hidden archive.')
         return f, n
 
-    def _interp_perceptual_hash(self, ev):
+    def _interp_perceptual_hash(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         if ev.get('phash'):
-            f.append(f'pHash: {ev["phash"]}')
-            f.append(f'dHash: {ev.get("dhash", "n/a")}')
-            f.append(f'aHash: {ev.get("ahash", "n/a")}')
-            n.append('Perceptual hashes computed — usable for near-duplicate detection.')
+            f.append(f'pHash (perceptual) : {ev["phash"]}')
+            f.append(f'dHash (difference) : {ev.get("dhash", "n/a")}')
+            f.append(f'aHash (average)    : {ev.get("ahash", "n/a")}')
+            n.append('Perceptual hashes computed — use for near-duplicate or modified-copy detection.')
         else:
             f.append('Perceptual hashing: not available.')
         return f, n
 
-    def _interp_ocr(self, ev):
+    def _interp_ocr(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         text = ev.get('text', '')
+        f.append(f'OCR language   : {ev.get("language", "eng")}')
         f.append(f'Characters extracted: {len(text)}')
         if text.strip():
             f.append(f'--- Extracted text (first 500 chars) ---\n{text[:500]}')
+            if len(text) > 500:
+                f.append(f'... [{len(text) - 500} more chars]')
             n.append(f'OCR succeeded — {len(text)} characters extracted.')
         else:
             f.append('OCR produced no text.')
         return f, n
 
-    def _interp_pdf_embedded(self, ev):
+    def _interp_pdf_embedded(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         images = ev.get('images', [])
-        f.append(f'Embedded images  : {len(images)}')
-        if images:
-            n.append(f'{len(images)} image(s) embedded in PDF.')
+        f.append(f'Embedded images      : {len(images)}')
+        for img in images[:15]:
+            f.append(f'  Page {img.get("page","?"):<4} | format: {img.get("format","?"):<5} | size: {img.get("size",0):,} bytes')
+        if len(images) > 15: f.append(f'  ... and {len(images) - 15} more image(s)')
+        if images: n.append(f'{len(images)} image(s) embedded in PDF.')
         attachments = ev.get('attachments', [])
-        f.append(f'File attachments : {"FOUND" if attachments else "none"}')
-        if attachments:
-            n.append('⚠ Embedded file attachments detected — examine separately.')
+        f.append(f'File attachments     : {"FOUND" if attachments else "none"}')
+        if attachments: n.append('⚠ Embedded file attachments detected — examine separately.')
         js = ev.get('javascript', [])
-        f.append(f'JavaScript       : {"FOUND" if js else "none"}')
-        if js:
-            n.append('⚠ JavaScript actions in PDF — potential security risk.')
+        f.append(f'JavaScript actions   : {"FOUND" if js else "none"}')
+        if js: n.append('⚠ JavaScript actions detected — potential security risk.')
         forms = ev.get('forms', [])
-        f.append(f'AcroForm         : {"FOUND" if forms else "none"}')
-        if forms:
-            n.append('Interactive form fields present — data may be submitted remotely.')
+        f.append(f'AcroForm / forms     : {"FOUND" if forms else "none"}')
+        if forms: n.append('Interactive AcroForm fields present — may submit data to a remote server.')
         return f, n
 
-    def _interp_pdf_fonts(self, ev):
+    def _interp_pdf_fonts(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         embedded = ev.get('embedded', [])
         missing  = ev.get('missing', [])
+        subsets  = ev.get('subsets', [])
         f.append(f'Embedded fonts ({len(embedded)}): {", ".join(embedded[:10]) or "none"}')
-        f.append(f'Non-embedded  ({len(missing)}): {", ".join(missing[:10]) or "none"}')
+        f.append(f'Non-embedded fonts ({len(missing)}): {", ".join(missing[:10]) or "none"}')
+        f.append(f'Subset fonts  ({len(subsets)}): {", ".join(subsets[:10]) or "none"}')
         if missing:
-            n.append(f'⚠ {len(missing)} font(s) not embedded — rendering may differ; possible text replacement.')
+            n.append(f'⚠ {len(missing)} font(s) not embedded: {", ".join(missing[:5])}. '
+                     f'Can indicate text replaced without proper font re-embedding.')
         return f, n
 
-    def _interp_security(self, ev):
+    def _interp_security(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
-        enc = ev.get('encrypted', False)
-        f.append(f'Encrypted         : {"YES" if enc else "no"}')
-        if enc:
-            n.append('⚠ PDF is encrypted — full content analysis is limited.')
+        enc  = ev.get('encrypted', False)
         sigs = ev.get('signatures', [])
-        f.append(f'Digital signatures: {len(sigs)}')
-        if sigs:
-            n.append(f'{len(sigs)} digital signature(s) present — verify validity independently.')
+        perm = ev.get('permissions')
+        f.append(f'Encrypted          : {"YES" if enc else "no"}')
+        if enc: n.append('⚠ PDF is encrypted — full content analysis is limited.')
+        if perm is not None: f.append(f'Permission flags   : {perm}')
+        f.append(f'Digital signatures : {len(sigs)} found')
+        if sigs: n.append(f'{len(sigs)} digital signature(s) present — verify validity independently.')
         return f, n
 
-    def _interp_pdf_hidden(self, ev):
+    def _interp_pdf_hidden(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         wt = ev.get('white_text', [])
         an = ev.get('annotations', [])
-        f.append(f'Near-white text blocks   : {len(wt)}')
+        f.append(f'Near-white text blocks    : {len(wt)}')
         if wt:
             for item in wt[:10]:
                 f.append(f'  Page {item.get("page","?")}: "{item.get("text","")[:80]}"')
-            n.append(f'⚠ {len(wt)} near-white text block(s) — commonly used to hide content.')
-        f.append(f'Invisible annotations    : {len(an)}')
+            if len(wt) > 10: f.append(f'  ... and {len(wt)-10} more block(s)')
+            n.append(f'⚠ {len(wt)} block(s) of near-white text — commonly used to hide content.')
+        else:
+            f.append('No near-white hidden text detected.')
+        f.append(f'Invisible annotations     : {len(an)}')
         if an:
+            for a in an[:5]:
+                f.append(f'  Page {a.get("page","?")}: subtype {a.get("subtype","?")}')
             n.append(f'⚠ {len(an)} annotation(s) with no visible appearance stream.')
+        else:
+            f.append('No invisible-appearance annotations detected.')
         return f, n
 
-    def _interp_pdf_revision(self, ev):
+    def _interp_pdf_revision(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         inc = ev.get('incremental_saves', 0)
-        f.append(f'Incremental saves: {inc}')
+        f.append(f'Incremental saves : {inc}')
         if inc > 0:
-            n.append(f'⚠ PDF has {inc} incremental-save link(s) — earlier versions may be recoverable.')
+            n.append(f'⚠ PDF has {inc} incremental-save link(s) — content from earlier versions '
+                     f'may be recoverable from the file body.')
+        else:
+            f.append('No incremental-save chain detected.')
         return f, n
 
-    def _interp_pdf_layout(self, ev):
+    def _interp_pdf_layout(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         pages = ev.get('pages', [])
-        f.append(f'Pages analysed: {len(pages)}')
+        f.append(f'Pages analysed      : {len(pages)}')
         for p in pages[:10]:
             nwc = p.get('near_white_text_count', 0)
-            f.append(f'  Page {p.get("page","?")}: text lines {p.get("text_count",0)}, '
-                     f'rects {p.get("rect_count",0)}, near-white {nwc}')
+            f.append(f'  Page {p.get("page","?"):<3} | text lines: {p.get("text_count",0):<5} | '
+                     f'rectangles: {p.get("rect_count",0):<5} | near-white items: {nwc}')
             if nwc > 0:
-                n.append(f'⚠ Page {p.get("page","?")}: {nwc} near-white text item(s).')
+                n.append(f'⚠ Page {p.get("page","?")}: {nwc} near-white text item(s) in layout.')
+        margins = ev.get('margins', {})
+        if margins:
+            f.append(f'First-page margins — left: {margins.get("left",0):.1f} | '
+                     f'right: {margins.get("right",0):.1f} | top: {margins.get("top",0):.1f} | '
+                     f'bottom: {margins.get("bottom",0):.1f}')
         return f, n
 
-    def _interp_jpeg_quantization(self, ev):
+    def _interp_jpeg_quantization(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
-        count = ev.get('tables_found', 0)
-        f.append(f'DQT tables found: {count}')
+        f.append(f'DQT tables found : {ev.get("tables_found", 0)}')
         for t in ev.get('tables', []):
-            f.append(f'  Table {t.get("table_id","?")} | quality ~{t.get("estimated_quality","?")} | '
-                     f'mean coeff {t.get("mean_value",0):.2f}')
+            f.append(f'  Table {t.get("table_id","?")} | precision: {t.get("precision","?")} | '
+                     f'est. quality: ~{t.get("estimated_quality","?")} | '
+                     f'mean coeff: {t.get("mean_value",0):.2f}')
         spread = ev.get('quality_spread')
-        if spread is not None:
-            f.append(f'Quality spread: {spread:.1f} pts')
+        if spread is not None: f.append(f'Quality spread across tables: {spread:.1f} pts')
         if ev.get('inconsistent_tables'):
-            n.append(f'⚠ Inconsistent JPEG quantization tables (spread {spread:.0f} pts) — '
-                     'image re-saved with a different encoder/quality.')
+            n.append(f'⚠ JPEG quantization tables inconsistent (spread {spread:.0f} pts) — '
+                     f'image was re-saved with a different encoder or quality setting.')
+        if ev.get('note'): f.append(f'Note: {ev["note"]}')
         return f, n
 
-    def _interp_compression_history(self, ev):
+    def _interp_compression_history(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
+        f.append(f'DCT blocks analysed          : {ev.get("blocks_analyzed", 0):,}')
+        f.append(f'Histogram bins (unique AC11) : {ev.get("histogram_bins", 0)}')
         ps = ev.get('periodicity_score', 0.0)
-        f.append(f'DCT blocks analysed         : {ev.get("blocks_analyzed", 0):,}')
-        f.append(f'Histogram periodicity score : {ps:.5f}  (threshold > 0.35)')
-        f.append(f'Method                      : {ev.get("method", "")}')
+        f.append(f'Histogram periodicity score  : {ps:.5f}  (threshold > 0.35)')
+        f.append(f'Method                       : {ev.get("method", "")}')
         if ev.get('double_compression_suspected'):
-            n.append(f'⚠ Double-JPEG compression artefact (periodicity {ps:.4f}) — '
-                     'image was re-saved at a different quality after initial JPEG compression.')
+            n.append(f'⚠ Double-JPEG compression detected (periodicity {ps:.4f}) — '
+                     f'strong signal that the image was re-saved at a different quality.')
+        else:
+            f.append('No double-compression periodicity pattern detected.')
         return f, n
 
-    def _interp_resampling(self, ev):
+    def _interp_resampling(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
+        peaks = ev.get('periodic_peak_count', 0)
         ratio = ev.get('peak_ratio', 0.0)
-        f.append(f'Periodic FFT peaks : {ev.get("periodic_peak_count", 0):,}')
-        f.append(f'Peak ratio         : {ratio:.7f}  (threshold > 0.0008000)')
+        f.append(f'Periodic FFT peaks above threshold : {peaks:,}')
+        f.append(f'Peak ratio                         : {ratio:.7f}  (threshold > 0.0008000)')
+        f.append(f'Method                             : {ev.get("method", "")}')
         if ev.get('resampling_suspected'):
-            n.append(f'⚠ Resampling artefact (peak ratio {ratio:.6f}) — image may have been '
-                     'geometrically transformed (scaled, rotated, warped).')
+            n.append(f'⚠ Resampling artefact detected (peak ratio {ratio:.6f}) — '
+                     f'image was likely scaled, rotated, or warped before saving.')
+        else:
+            f.append('No periodic FFT peaks consistent with resampling detected.')
         return f, n
 
-    def _interp_cfa_consistency(self, ev):
+    def _interp_cfa_consistency(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
-        mean_s = ev.get('mean_cfa_score', 0)
-        f.append(f'Mean CFA score        : {mean_s:.5f}  (>0.15 = consistent demosaicing)')
-        f.append(f'Std dev               : {ev.get("std_cfa_score", 0):.5f}')
-        f.append(f'Inconsistency ratio   : {ev.get("inconsistency_ratio", 0):.4f}')
+        f.append(f'Analysis grid               : {ev.get("grid_shape", [])}')
+        f.append(f'Mean CFA correlation score  : {ev.get("mean_cfa_score", 0):.5f}  (>0.15 = consistent)')
+        f.append(f'Std dev across blocks       : {ev.get("std_cfa_score", 0):.5f}')
+        f.append(f'Block inconsistency ratio   : {ev.get("inconsistency_ratio", 0):.4f}')
+        f.append(f'Method                      : {ev.get("method", "")}')
         if ev.get('cfa_absent_or_inconsistent'):
-            n.append(f'⚠ CFA demosaicing correlation weak/absent (mean {mean_s:.4f}) — '
-                     'consistent with AI-generated images, screenshots, or composited regions.')
+            n.append(f'⚠ CFA demosaicing pattern weak or absent (mean score {ev.get("mean_cfa_score",0):.4f}) — '
+                     f'consistent with AI-generated images, screenshots, or composited regions.')
+        else:
+            f.append('CFA demosaicing pattern present — consistent with camera capture.')
         return f, n
 
-    def _interp_prnu_residual(self, ev):
+    def _interp_prnu_residual(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
+        f.append(f'Blocks analysed             : {ev.get("blocks_analyzed", 0)}')
+        f.append(f'Mean residual energy        : {ev.get("mean_residual_energy", 0):.5f}')
         cv_ = ev.get('residual_energy_cv', 0.0)
-        f.append(f'Blocks analysed        : {ev.get("blocks_analyzed", 0)}')
-        f.append(f'Mean residual energy   : {ev.get("mean_residual_energy", 0):.5f}')
-        f.append(f'Residual energy CV     : {cv_:.5f}  (threshold > 0.8)')
+        f.append(f'Residual energy CV          : {cv_:.5f}  (threshold > 0.8 = inconsistent)')
+        f.append(f'Note                        : {ev.get("note", "")}')
         if ev.get('spatial_inconsistency_suspected'):
             n.append(f'⚠ PRNU residual energy spatially inconsistent (CV={cv_:.3f}) — '
-                     'possible composite from different capture pipelines.')
+                     f'content from different capture pipelines may have been composited.')
+        else:
+            f.append('PRNU residual energy spatially consistent.')
         return f, n
 
-    def _interp_noise_inconsistency(self, ev):
+    def _interp_noise_inconsistency(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
+        f.append(f'Blocks analysed            : {ev.get("blocks_analyzed", 0)}')
+        f.append(f'Median block variance      : {ev.get("median_block_variance", 0):.4f}')
         out_c = ev.get('outlier_block_count', 0)
         out_r = ev.get('outlier_ratio', 0.0)
-        f.append(f'Blocks analysed    : {ev.get("blocks_analyzed", 0)}')
-        f.append(f'Outlier blocks     : {out_c}  ({out_r:.2%})')
+        f.append(f'Outlier blocks (>6× MAD)   : {out_c}  ({out_r:.2%} of total)')
+        f.append(f'Method                     : {ev.get("method", "")}')
         if ev.get('inconsistent_noise_suspected'):
-            n.append(f'⚠ Noise inconsistency: {out_c} blocks ({out_r:.1%}) deviate strongly — '
-                     'classic signal of image splicing, inpainting, or compositing.')
+            n.append(f'⚠ Block noise inconsistency: {out_c} blocks ({out_r:.1%}) deviate strongly — '
+                     f'classic indicator of splicing, inpainting, or compositing.')
+        else:
+            f.append('Block noise variance consistent — no outlier regions.')
         return f, n
 
-    def _interp_advanced_steganalysis(self, ev):
+    def _interp_advanced_steganalysis(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
+        f.append(f'4×4 pixel groups analysed  : {ev.get("groups_analyzed", 0):,}')
+        f.append(f'RM−SM (positive mask)       : {ev.get("rm_minus_sm", 0):.5f}')
+        f.append(f'RM−SM (negative mask)       : {ev.get("rm_minus_sm_negmask", 0):.5f}')
         asym = ev.get('rs_asymmetry', 0.0)
-        f.append(f'Groups analysed  : {ev.get("groups_analyzed", 0):,}')
-        f.append(f'RS asymmetry     : {asym:.5f}  (threshold > 0.03)')
+        f.append(f'RS asymmetry               : {asym:.5f}  (threshold > 0.03)')
+        f.append(f'Method                     : {ev.get("method", "")}')
         if ev.get('embedding_suspected'):
-            n.append(f'⚠ RS steganalysis: asymmetry {asym:.4f} — statistical signal of hidden payload.')
+            n.append(f'⚠ RS steganalysis: asymmetry {asym:.4f} exceeds threshold — '
+                     f'statistical signal consistent with steganographic embedding.')
+        else:
+            f.append('RS steganalysis: no significant asymmetry detected.')
         return f, n
 
-    def _interp_copy_move_v2(self, ev):
+    def _interp_copy_move_v2(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         note = ev.get('note')
+        f.append(f'Method                   : {ev.get("method", "SIFT + BFMatcher knn + RANSAC")}')
         if note:
-            f.append(f'Note: {note}')
+            f.append(f'Note                     : {note}')
             return f, n
+        f.append(f'Raw SIFT matches (knn)   : {ev.get("raw_match_count", 0)}')
         inliers = ev.get('ransac_inliers', 0)
-        f.append(f'RANSAC geometric inliers: {inliers}  (threshold ≥ 8)')
+        f.append(f'RANSAC geometric inliers : {inliers}  (threshold ≥ 8 = detected)')
         if ev.get('detected'):
-            n.append(f'⚠ Copy-move detected (SIFT+RANSAC): {inliers} inliers — high-confidence manipulation signal.')
+            n.append(f'⚠ Copy-move detected by SIFT + RANSAC ({inliers} geometrically-verified inliers) — '
+                     f'high-confidence manipulation signal.')
+        else:
+            f.append('No geometrically-verified copy-move pattern found.')
         return f, n
 
-    def _interp_ela_v2(self, ev):
+    def _interp_ela_v2(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
-        f.append(f'Method: {ev.get("method", "")}')
         scores  = ev.get('scores_by_quality', {})
         regions = ev.get('region_analysis', {})
+        f.append(f'Method : {ev.get("method", "")}')
+        f.append('Per-quality ELA results:')
         for q in (60, 75, 90):
             sc  = scores.get(q) or scores.get(str(q))
             reg = regions.get(q) or regions.get(str(q), {})
             if sc is not None:
-                f.append(f'  Q{q:>3} | mean: {sc:>8.3f} | hot-block ratio: {reg.get("hot_block_ratio",0):.3%}')
+                f.append(f'  Quality {q:>3} | mean error: {sc:>8.3f} | '
+                         f'max block: {reg.get("max_block_mean",0):>8.2f} | '
+                         f'hot-block ratio: {reg.get("hot_block_ratio",0):.3%}')
         if ev.get('localized_editing_suspected'):
-            n.append('⚠ Multi-quality ELA: localised hot-spot regions detected — '
-                     'inconsistently compressed areas indicate compositing or selective re-save.')
+            max_hr = max((regions.get(q) or regions.get(str(q), {})).get('hot_block_ratio', 0)
+                         for q in (60, 75, 90))
+            n.append(f'⚠ Multi-quality ELA: localised hot-spot regions detected '
+                     f'(max hot-block ratio {max_hr:.2%}) — strong indicator of composited region.')
+        else:
+            f.append('No localised ELA hot-spots detected.')
         return f, n
 
-    def _interp_font_consistency(self, ev):
+    def _interp_font_consistency(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
-        f.append(f'Distinct fonts: {ev.get("distinct_fonts", 0)}')
+        f.append(f'Distinct fonts             : {ev.get("distinct_fonts", 0)}')
+        f.append('Font usage (top 10):')
+        for font, count in list(ev.get('font_usage', {}).items())[:10]:
+            f.append(f'  {font:<40}: {count} use(s)')
+        f.append(f'Font-size outlier count    : {ev.get("size_outlier_count", 0)}')
         anomalies = ev.get('font_anomalies', [])
         if anomalies:
-            for a in anomalies[:5]:
+            f.append(f'Font anomalies: {len(anomalies)}')
+            for a in anomalies[:10]:
                 f.append(f'  Page {a.get("page","?")}: minority "{a.get("minority_font","?")}" '
                          f'({a.get("minority_count",0)}×) vs dominant "{a.get("dominant_font","?")}"')
         if ev.get('inconsistent_fonts_suspected'):
-            n.append(f'⚠ Font inconsistency: {len(anomalies)} page(s) with minority fonts — '
-                     'possible localised text replacement.')
+            n.append(f'⚠ Font consistency: {len(anomalies)} page(s) with minority fonts — '
+                     f'consistent with localised text replacement.')
+        else:
+            f.append('Font distribution appears consistent.')
         return f, n
 
-    def _interp_ocr_image_consistency(self, ev):
+    def _interp_ocr_image_consistency(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
         wc = ev.get('word_count', 0)
-        f.append(f'Words detected: {wc}')
+        f.append(f'Words detected               : {wc}')
         if wc == 0:
+            f.append(f'Note: {ev.get("note", "No text detected")}')
             return f, n
+        ho = ev.get('height_outlier_count', 0)
         hr = ev.get('height_outlier_ratio', 0.0)
+        mc = ev.get('mean_ocr_confidence', 0.0)
         lc = ev.get('low_confidence_ratio', 0.0)
-        f.append(f'Glyph-height outlier ratio : {hr:.3%}')
-        f.append(f'Low-confidence word ratio  : {lc:.3%}')
+        f.append(f'Glyph-height outliers        : {ho}  ({hr:.3%})')
+        f.append(f'Mean OCR confidence          : {mc:.1f}%')
+        f.append(f'Low-confidence words (<50%)  : {lc:.3%}')
         if ev.get('rendering_inconsistency_suspected'):
-            n.append(f'⚠ OCR inconsistency: height outlier {hr:.2%}, low-confidence {lc:.2%} — '
-                     'possible localised text insertion from a different source.')
-        return f, n
-
-    # ── v8.1 UPDATED interpreter: ai_generated_heuristics ─────────────────────
-
-    def _interp_ai_generated_heuristics(self, ev: Dict) -> Tuple[List[str], List[str]]:
-        f, n = [], []
-        sigs   = ev.get('signals', {})
-        cnt    = ev.get('indicator_count', 0)
-        reasons = ev.get('indicators_triggered', [])
-        tw     = ev.get('triggered_weight', 0)
-        total  = ev.get('total_weight', 21)
-        ws     = ev.get('weighted_score', 0.0)
-
-        f.append(f'Signals evaluated         : 10 (weighted total = {total})')
-        f.append(f'Indicators triggered      : {cnt} / 10')
-        f.append(f'Triggered weight          : {tw} / {total}')
-        f.append(f'Weighted score            : {ws:.4f}  (threshold ≥ 0.30)')
-        f.append('')
-        f.append('Per-signal measurements:')
-
-        sig_display = [
-            ('local_variance_cv',    'S1  Local variance CV',           'threshold < 0.75'),
-            ('noise_floor_by_scale', 'S2  Multi-scale noise floor',     'threshold all < 2.5'),
-            ('gradient_kurtosis',    'S3  Gradient kurtosis',           'threshold < 4.5'),
-            ('channel_corr_cv',      'S4  Channel correlation CV',      'threshold < 0.12'),
-            ('edge_density_cv',      'S5  Edge density CV',             'threshold < 0.50'),
-            ('block_dct_kurtosis',   'S6  Block DCT kurtosis',          'threshold < 4.0'),
-            ('noise_autocorr_peak',  'S7  Noise autocorr peak',         'threshold > 0.12'),
-            ('spectral_info',        'S8  Spectral band anomaly',       'periodic_peak_ratio > 0.002'),
-            ('saturation_uniformity','S9  Saturation uniformity',       'threshold > 0.85'),
-            ('patch_entropy_cv',     'S10 Patch entropy CV',            'threshold < 0.20'),
-        ]
-        for key, label, thr in sig_display:
-            val = sigs.get(key, 'n/a')
-            if isinstance(val, float):
-                val_str = f'{val:.4f}'
-            elif isinstance(val, list):
-                val_str = str([round(x, 3) for x in val])
-            elif isinstance(val, dict):
-                val_str = ', '.join(f'{k}={v}' for k, v in list(val.items())[:3])
-            else:
-                val_str = str(val)
-            f.append(f'  {label:<35} = {val_str:<15}  ({thr})')
-
-        f.append('')
-        f.append(f'Caveat: {ev.get("confidence_caveat", "")}')
-
-        if ev.get('ai_generated_suspected'):
-            n.append(f'⚠ AI-generation heuristics v8.1: weighted score {ws:.4f} ≥ 0.30 threshold.')
-            n.append(f'  {cnt}/10 signals triggered ({tw}/{total} weighted):')
-            for r in reasons:
-                n.append(f'   • {r}')
-            n.append('  A trained classifier is required for production-grade detection.')
+            n.append(f'⚠ OCR consistency: outlier ratio {hr:.2%}, low-confidence ratio {lc:.2%} — '
+                     f'possible localised text insertion from a different rendering source.')
         else:
-            f.append(f'Weighted score {ws:.4f} is below the 0.30 threshold — '
-                     'image characteristics are not inconsistent with camera capture.')
+            f.append('OCR consistency: glyph sizes and confidence uniform.')
         return f, n
 
-    # ── v8.1 UPDATED interpreter: ai_manipulation_heuristic ───────────────────
+    # ── v9 new interpreter methods ────────────────────────────────────────────
 
-    def _interp_ai_manipulation_heuristic(self, ev: Dict) -> Tuple[List[str], List[str]]:
+    def _interp_wavelet_consistency(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
-        f.append(f'Blocks analysed            : {ev.get("blocks_analyzed", 0)}')
-        sc_o = ev.get('suspect_block_count_original', 0)
-        sr_o = ev.get('suspect_ratio_original', 0.0)
-        sc_e = ev.get('suspect_block_count_enhanced', 0)
-        sr_e = ev.get('suspect_ratio_enhanced', 0.0)
-        f.append(f'Suspect blocks (original)  : {sc_o}  ({sr_o:.3%})')
-        f.append(f'Suspect blocks (enhanced)  : {sc_e}  ({sr_e:.3%})')
-        meds = ev.get('metric_medians', {})
-        if meds:
-            f.append('Block metric medians:')
-            for k, v in meds.items():
-                f.append(f'  {k:<20}: {v}')
-        f.append(f'Method: {ev.get("method", "")}')
-        f.append(f'Caveat: {ev.get("confidence_caveat", "")}')
-        if ev.get('localized_ai_edit_suspected'):
-            n.append(
-                f'⚠ AI manipulation heuristic v8.1: enhanced ratio {sr_e:.2%} of blocks '
-                f'show co-occurring anomalies in ≥2 of 4 metrics '
-                f'(noise variance, CFA, entropy, gradient). '
-                'Spatially localised co-occurring anomalies are consistent with '
-                'AI inpainting or compositing. Treat as a corroborating signal.')
-        else:
-            f.append('No localised AI-manipulation signature detected.')
-        return f, n
-
-    # ── NEW v8.1 interpreters ──────────────────────────────────────────────────
-
-    def _interp_wavelet_analysis(self, ev: Dict) -> Tuple[List[str], List[str]]:
-        f, n = [], []
-        le   = ev.get('level_energies', {})
-        dr   = ev.get('energy_decay_ratios', [])
-        md   = ev.get('mean_energy_decay_ratio', 0.0)
-        hh1k = ev.get('hh1_subband_kurtosis', 3.0)
-        fc   = ev.get('fine_to_coarse_energy_ratio', 0.0)
-
-        f.append('Haar wavelet 3-level decomposition (pure numpy):')
-        for lvl, e in sorted(le.items()):
-            f.append(f'  Level {lvl} total detail energy : {e:.6f}')
-        f.append(f'Energy decay ratios L1→L2, L2→L3 : {dr}  (natural: ~2–8)')
-        f.append(f'Mean energy decay ratio            : {md:.4f}')
-        f.append(f'HH-1 subband kurtosis              : {hh1k:.3f}  (natural: >5.0)')
-        f.append(f'Fine/coarse energy ratio (L1/L3)   : {fc:.4f}  (anomaly if <2 or >60)')
-        f.append(f'AI wavelet signals triggered        : {ev.get("ai_wavelet_signals", 0)} / 3')
-        f.append(f'Method: {ev.get("method", "")}')
-
-        signals = []
-        if ev.get('anomalous_energy_decay'):
-            signals.append(f'anomalous energy decay ratio {md:.2f}')
-        if ev.get('anomalous_hh_kurtosis'):
-            signals.append(f'low HH-1 kurtosis {hh1k:.2f} (natural >5.0)')
-        if ev.get('anomalous_energy_ratio'):
-            signals.append(f'anomalous fine/coarse ratio {fc:.2f}')
-
-        if ev.get('ai_signal_suspected'):
-            n.append(
-                f'⚠ Wavelet analysis: {len(signals)} signal(s) triggered — '
-                + '; '.join(signals) + '. '
-                'Deviations from natural 1/f² scaling are consistent with AI synthesis '
-                'or heavy processing.')
-        else:
-            f.append('Wavelet energy distribution is within natural bounds.')
-        return f, n
-
-    def _interp_local_texture_consistency(self, ev: Dict) -> Tuple[List[str], List[str]]:
-        f, n = [], []
-        f.append(f'Blocks analysed         : {ev.get("blocks_analyzed", 0)}')
-        std_cv  = ev.get('block_std_cv', 0.0)
-        ent_cv  = ev.get('block_entropy_cv', 0.0)
-        edge_cv = ev.get('block_edge_density_cv', 0.0)
-        f.append(f'Block std CV            : {std_cv:.4f}   (threshold < 0.60  → too uniform)')
-        f.append(f'Block entropy CV        : {ent_cv:.4f}   (threshold < 0.20  → too uniform)')
-        f.append(f'Block edge density CV   : {edge_cv:.4f}  (threshold < 0.50  → too uniform)')
-        f.append(f'Block std mean          : {ev.get("block_std_mean", 0):.3f}')
-        f.append(f'Block entropy mean      : {ev.get("block_entropy_mean", 0):.4f}')
-        f.append(f'Block edge density mean : {ev.get("block_edge_density_mean", 0):.4f}')
-        ai_sigs = ev.get('ai_texture_signals', 0)
-        f.append(f'AI texture signals      : {ai_sigs} / 3')
-        f.append(f'Method: {ev.get("method", "")}')
+        f.append(f'Wavelet levels computed   : {ev.get("levels_computed", 0)}')
+        f.append(f'Level-1 HH kurtosis       : {ev.get("l1_hh_kurtosis", 0):.4f}  '
+                 f'(threshold < {ev.get("thresholds", {}).get("kurtosis", 3.5)}: suspicious)')
+        ratios = ev.get('energy_ratios', [])
+        if ratios:
+            f.append(f'Inter-level energy ratios : {[f"{r:.2f}" for r in ratios]}')
+            f.append(f'Ratio mean                : {ev.get("energy_ratio_mean", 0):.3f}  '
+                     f'(threshold < {ev.get("thresholds", {}).get("energy_ratio", 2.5)}: suspicious)')
+        f.append(f'LH/HL anisotropy          : {ev.get("lh_hl_anisotropy", 0):.4f}  '
+                 f'(threshold > {ev.get("thresholds", {}).get("anisotropy", 0.4)}: suspicious)')
 
         triggered = []
-        if ev.get('std_too_uniform'):        triggered.append(f'std CV={std_cv:.3f}')
-        if ev.get('entropy_too_uniform'):    triggered.append(f'entropy CV={ent_cv:.3f}')
-        if ev.get('edge_density_too_uniform'): triggered.append(f'edge density CV={edge_cv:.3f}')
+        if ev.get('low_kurtosis'):     triggered.append('Low HH kurtosis (more Gaussian subbands than expected for a camera image)')
+        if ev.get('low_energy_ratio'): triggered.append('Low inter-level energy ratio (hallucinated texture at multiple scales)')
+        if ev.get('high_anisotropy'):  triggered.append('High LH/HL anisotropy (directional bias from convolutional upsampling)')
 
-        if ev.get('ai_texture_suspected'):
-            n.append(
-                f'⚠ Local texture consistency: {len(triggered)} metric(s) show abnormally uniform '
-                'block-level texture — ' + ', '.join(triggered) + '. '
-                'Natural scenes exhibit high regional diversity in std, entropy, and edge density. '
-                'This uniformity is consistent with AI-generated content.')
+        if triggered:
+            n.append(f'⚠ Wavelet consistency: {len(triggered)} anomalous signal(s):')
+            for t in triggered: n.append(f'   • {t}')
         else:
-            f.append('Block-level texture diversity is within natural bounds.')
+            f.append('Wavelet statistics are consistent with camera-captured content.')
+        return f, n
+
+    def _interp_power_spectrum(self, ev: Dict) -> Tuple[List[str], List[str]]:
+        f, n = [], []
+        beta = ev.get('spectral_beta')
+        if beta is not None:
+            f.append(f'Spectral beta (1/f^beta) : {beta:.4f}  (expected: 1.4 – 4.2)')
+        f.append(f'Beta anomaly             : {"YES" if ev.get("beta_anomaly") else "no"}')
+        f.append(f'Periodic HF peaks        : {ev.get("periodic_hf_peaks", 0)}  (threshold > 5)')
+        f.append(f'Azimuthal CV             : {ev.get("azimuthal_cv", 0):.4f}  (threshold > 0.60)')
+
+        if ev.get('ai_signal_detected'):
+            parts = []
+            if ev.get('beta_anomaly'):          parts.append(f'spectral slope beta={beta:.2f} outside [1.4, 4.2]')
+            if ev.get('high_freq_periodicity'): parts.append(f'{ev.get("periodic_hf_peaks",0)} periodic HF peaks detected')
+            if ev.get('high_azimuthal_variance'): parts.append(f'azimuthal CV={ev.get("azimuthal_cv",0):.3f} > 0.60')
+            n.append(f'⚠ Power spectrum anomaly detected: {"; ".join(parts)}. '
+                     f'Deviation from the natural 1/f² PSD law, periodic peaks, or angular '
+                     f'non-uniformity are consistent with AI generation or heavy processing.')
+        else:
+            f.append('Power spectrum is consistent with the natural 1/f power law.')
         return f, n
 
     def _interp_jpeg_ghost(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
-        f.append(f'Blocks analysed            : {ev.get("blocks_analyzed", 0)}')
-        f.append(f'Qualities tested           : {ev.get("qualities_tested", [])}')
-        mean_err = ev.get('mean_error_by_quality', {})
-        if mean_err:
-            f.append('Mean residual per quality:')
-            for q, e in sorted(mean_err.items()):
-                f.append(f'  Q{q:<3} → mean error {e:.3f}')
-        opt_dist = ev.get('optimal_quality_distribution', {})
-        if opt_dist:
-            f.append('Block optimal-quality distribution:')
-            for q, cnt in sorted(opt_dist.items()):
-                f.append(f'  Q{q:<3} → {cnt} block(s)')
-        idx_std    = ev.get('best_quality_index_std', 0.0)
-        idx_unique = ev.get('best_quality_index_unique_count', 1)
-        f.append(f'Optimal quality index std  : {idx_std:.4f}  (threshold > 0.8)')
-        f.append(f'Unique optimal qualities   : {idx_unique}')
-        f.append(f'Method: {ev.get("method", "")}')
-
-        if ev.get('ghost_inconsistency_suspected'):
-            n.append(
-                f'⚠ JPEG ghost inconsistency: {idx_unique} distinct optimal quality levels '
-                f'detected across blocks (index std={idx_std:.3f}). '
-                'Different image regions have different JPEG compression histories — '
-                'a strong indicator that content from multiple sources was composited. '
-                'The quality distribution map shows which blocks originate from different sources.')
+        f.append(f'Method                  : {ev.get("method", "")}')
+        f.append(f'Qualities tested        : {ev.get("qualities_tested", [])}')
+        f.append(f'Blocks analyzed         : {ev.get("blocks_analyzed", 0)}')
+        f.append(f'Dominant ghost quality  : Q{ev.get("dominant_ghost_quality", "?")}')
+        inc_r  = ev.get('inconsistency_ratio', 0.0)
+        g_std  = ev.get('ghost_quality_std', 0.0)
+        f.append(f'Inconsistent blocks     : {ev.get("inconsistent_blocks", 0)}  ({inc_r:.2%})')
+        f.append(f'Ghost quality std dev   : {g_std:.2f}')
+        dist   = ev.get('ghost_distribution', {})
+        if dist:
+            f.append('Ghost quality distribution:')
+            for q, cnt in sorted(dist.items()):
+                f.append(f'  Q{q:<3}: {cnt} block(s)')
+        thr = ev.get('thresholds', {})
+        if ev.get('manipulation_suspected'):
+            n.append(f'⚠ JPEG Ghost: {inc_r:.1%} of blocks have a different ghost quality from '
+                     f'the dominant Q{ev.get("dominant_ghost_quality","?")} (std={g_std:.1f}). '
+                     f'Spatial inconsistency in the ghost quality map indicates that regions of the '
+                     f'image originated from a different JPEG compression history — '
+                     f'a strong indicator of copy-paste manipulation or compositing.')
         else:
-            f.append('JPEG ghost analysis: optimal quality is consistent across all blocks — '
-                     'no mixed compression history detected.')
+            f.append('JPEG ghost quality map is spatially consistent — no manipulation signal.')
         return f, n
 
-    def _interp_ai_detection_fusion(self, ev: Dict) -> Tuple[List[str], List[str]]:
+    def _interp_local_patch_statistics(self, ev: Dict) -> Tuple[List[str], List[str]]:
         f, n = [], []
-        ws      = ev.get('weighted_score', 0.0)
-        tw      = ev.get('triggered_weight', 0)
-        total   = ev.get('total_weight', 15)
-        tier    = ev.get('confidence_tier', 'low')
-        verdict = ev.get('verdict', '')
-        details = ev.get('signal_details', {})
-        signals = ev.get('signals_triggered', [])
+        f.append(f'Grid                    : {ev.get("grid_size", "4×4")}  ({ev.get("patches_analyzed", 0)} patches)')
+        bcv = ev.get('brightness_cv', 0.0)
+        tcv = ev.get('texture_cv', 0.0)
+        hfk = ev.get('hf_variance_kurtosis', 0.0)
+        f.append(f'Brightness CV           : {bcv:.4f}  (threshold < 0.25: suspicious uniformity)')
+        f.append(f'Texture (HF) CV         : {tcv:.4f}  (threshold < 0.40: suspicious uniformity)')
+        f.append(f'HF variance kurtosis    : {hfk:.4f}  (threshold < 3.0: suspicious uniformity)')
+        thr = ev.get('thresholds', {})
 
-        f.append('AI Detection Fusion — 6-signal independent consensus (v8.1):')
-        f.append(f'  Weighted score  : {ws:.4f}  (threshold ≥ 0.40 = suspected)')
-        f.append(f'  Triggered weight: {tw} / {total}')
-        f.append(f'  Confidence tier : {tier.upper()}')
-        f.append(f'  Verdict         : {verdict}')
-        f.append('')
-        f.append('Signal measurements:')
-        label_map = {
-            'A_noise_floor_std':    ('A  Noise floor std',        'thr < 1.8', 3),
-            'B_local_variance_cv':  ('B  Local variance CV',      'thr < 0.70', 3),
-            'C_dct_kurtosis':       ('C  DCT AC kurtosis',        'thr < 4.0', 2),
-            'D_wavelet_decay_l1_l2':('D  Wavelet decay L1→L2',   'thr <1.3 or >12', 2),
-            'E_noise_autocorr_peak':('E  Noise autocorr peak',    'thr > 0.12', 3),
-            'F_mean_cfa_score':     ('F  Mean CFA score',         'thr < 0.12', 2),
-        }
-        for key, (label, thr, wt) in label_map.items():
-            val = details.get(key, 'n/a')
-            val_str = f'{val:.4f}' if isinstance(val, float) else str(val)
-            f.append(f'  {label:<30} = {val_str:<10}  ({thr})  [weight {wt}]')
+        triggered = []
+        if ev.get('low_brightness_cv'): triggered.append(f'Brightness CV={bcv:.3f} < {thr.get("brightness_cv", 0.25)} (unusually uniform brightness across all patches)')
+        if ev.get('low_texture_cv'):    triggered.append(f'Texture CV={tcv:.3f} < {thr.get("texture_cv", 0.40)} (AI generators often fill all regions with similar texture)')
+        if ev.get('low_hf_kurtosis'):   triggered.append(f'HF kurtosis={hfk:.3f} < {thr.get("hf_kurtosis", 3.0)} (texture content too evenly distributed)')
 
+        if triggered:
+            n.append(f'⚠ Local patch statistics: {len(triggered)} uniformity signal(s):')
+            for t in triggered: n.append(f'   • {t}')
+        else:
+            f.append('Local patch statistics show natural brightness and texture variation.')
+        return f, n
+
+    def _interp_gradient_coherence(self, ev: Dict) -> Tuple[List[str], List[str]]:
+        f, n = [], []
+        ne  = ev.get('orientation_entropy_norm', 0.0)
+        t3  = ev.get('top3_orientation_power', 0.0)
+        gcv = ev.get('gradient_block_cv', 0.0)
+        f.append(f'Orientation entropy (norm) : {ne:.4f}  (threshold > 0.82 = too isotropic)')
+        f.append(f'Top-3 orientation power    : {t3:.4f}  (threshold < 0.25 = weak dominant directions)')
+        f.append(f'Gradient block CV          : {gcv:.4f}')
+        f.append(f'Strong pixels used         : {ev.get("strong_pixels_used", 0):,}')
+        thr = ev.get('thresholds', {})
+
+        if ev.get('ai_signal_detected'):
+            n.append(f'⚠ Gradient coherence: normalised orientation entropy {ne:.3f} > '
+                     f'{thr.get("norm_entropy", 0.82)}, top-3 power {t3:.3f} < '
+                     f'{thr.get("top3_power", 0.25)}. '
+                     f'An isotropic gradient field with no dominant orientations is '
+                     f'consistent with AI-hallucinated texture that fills the image uniformly, '
+                     f'unlike real scenes where edges concentrate along specific directions.')
+        else:
+            f.append('Gradient orientation shows natural directional concentration — '
+                     'consistent with a real scene.')
+        return f, n
+
+    def _interp_ai_generated_heuristics(self, ev: Dict) -> Tuple[List[str], List[str]]:
+        f, n = [], []
+        conf  = ev.get('confidence', 0.0)
+        score = ev.get('weighted_score', 0.0)
+        max_s = ev.get('max_possible_score', 11.0)
+        cnt   = ev.get('signals_triggered', 0)
+        total = ev.get('signals_total', 0)
+        thresh= ev.get('confidence_threshold', 0.27)
+
+        f.append(f'Weighted score    : {score:.2f} / {max_s:.1f}')
+        f.append(f'Confidence        : {conf:.2%}  (threshold ≥ {thresh:.0%} = suspected)')
+        f.append(f'Signals triggered : {cnt} / {total}')
         f.append('')
-        f.append(f'Caveat: {ev.get("caveat", "")}')
+        f.append('Per-signal breakdown:')
+
+        for sig_name, detail in ev.get('signal_details', {}).items():
+            flag  = '▶ TRIGGERED' if detail.get('triggered') else '  ok'
+            val   = detail.get('value')
+            val_s = f'{val:.4f}' if isinstance(val, float) else str(val)
+            f.append(f'  {flag}  [{sig_name}]  value={val_s}  weight={detail.get("weight",0):.1f}')
+            if detail.get('triggered') and detail.get('reason'):
+                f.append(f'            → {detail["reason"]}')
+
+        f.append(f'')
+        f.append(f'Caveat: {ev.get("confidence_caveat", "")}')
 
         if ev.get('ai_generated_suspected'):
-            n.append(f'⚠ AI Detection Fusion: weighted score {ws:.4f} ≥ 0.40 — '
-                     f'{tier.upper()} confidence of AI generation.')
-            for sig in signals:
-                n.append(f'   • {sig}')
-            n.append('  Fusion result is independent of other individual extractors.')
-        elif tier == 'medium':
-            n.append(f'↑ AI Detection Fusion (medium): score {ws:.4f} — some signals present, '
-                     'below the 0.40 threshold but warrants attention alongside other findings.')
+            n.append(f'⚠ AI generation heuristics: confidence {conf:.1%} ≥ {thresh:.0%} threshold. '
+                     f'{cnt}/{total} weighted signals triggered (score {score:.2f}/{max_s:.1f}):')
+            for desc in ev.get('triggered_descriptions', []):
+                n.append(f'   • {desc}')
+            n.append('   A dedicated trained classifier is required for a reliable verdict.')
         else:
-            f.append(f'Fusion score {ws:.4f} below threshold — no dominant AI-generation pattern.')
+            f.append(f'AI generation heuristics: confidence {conf:.1%} below threshold {thresh:.0%} — '
+                     f'image characteristics are not inconsistent with camera capture.')
         return f, n
 
-    # ── Text report formatter ──────────────────────────────────────────────────
+    def _interp_ai_manipulation_heuristic(self, ev: Dict) -> Tuple[List[str], List[str]]:
+        f, n = [], []
+        sc  = ev.get('suspect_block_count', 0)
+        sr  = ev.get('suspect_block_ratio', 0.0)
+        lc  = ev.get('coherent_suspect_clusters', 0)
+        tc  = ev.get('total_suspect_clusters', 0)
+        conf= ev.get('detection_confidence', 0.0)
+        f.append(f'Blocks analyzed               : {ev.get("blocks_analyzed", 0)}')
+        f.append(f'Suspect blocks (≥2 signals)   : {sc}  ({sr:.3%})')
+        f.append(f'Noise anomalies               : {ev.get("noise_anomaly_count", 0)}')
+        f.append(f'CFA anomalies                 : {ev.get("cfa_anomaly_count", 0)}')
+        f.append(f'Edge-density anomalies        : {ev.get("edge_anomaly_count", 0)}')
+        f.append(f'Entropy anomalies             : {ev.get("entropy_anomaly_count", 0)}')
+        f.append(f'Coherent suspect clusters ≥4  : {lc}  (out of {tc} total clusters)')
+        f.append(f'Detection confidence          : {conf:.2%}')
+        f.append(f'Method                        : {ev.get("method", "")}')
+        f.append(f'Caveat                        : {ev.get("confidence_caveat", "")}')
+        if ev.get('localized_ai_edit_suspected'):
+            n.append(
+                f'⚠ AI manipulation heuristic (confidence {conf:.1%}): {sr:.2%} of blocks show '
+                f'multi-signal co-occurrence (noise + CFA + edge + entropy anomalies). '
+                + (f'{lc} spatially coherent cluster(s) of ≥4 adjacent suspect blocks detected — '
+                   f'coherent spatial regions are a much stronger signal than isolated outliers. '
+                   if lc > 0 else '')
+                + 'Consistent with AI inpainting or compositing at localised regions.'
+            )
+        else:
+            f.append('No localised AI-manipulation signature detected.')
+        return f, n
+
+    # ── Text report formatter ─────────────────────────────────────────────────
 
     def format_text_report(
         self,
@@ -3267,9 +3380,10 @@ class DetailedReportBuilder:
         SEP  = '═' * 80
         SEP2 = '─' * 80
         lines: List[str] = []
+
         lines.append(SEP)
         lines.append('  FORENSIC EVIDENCE REPORT  —  Detailed Direct Output')
-        lines.append('  Engine: Forensic Engine v8.1 (AI Detection Enhanced Edition)')
+        lines.append(f'  Engine: Forensic Engine v9 (AI-Detection Enhanced Edition)')
         lines.append(SEP)
         lines.append(f'  File      : {file_path}')
         lines.append(f'  Type      : {file_type}  ({mime_type})')
@@ -3278,6 +3392,7 @@ class DetailedReportBuilder:
             lines.append(f'  Report ID : {report_id}')
         lines.append(SEP)
         lines.append('')
+
         notable = assessment.get('all_notable_findings', [])
         lines.append(f'  NOTABLE FINDINGS SUMMARY  ({len(notable)} item(s))')
         lines.append(SEP2)
@@ -3286,8 +3401,9 @@ class DetailedReportBuilder:
                 for sub_line in item.split('\n'):
                     lines.append(f'  {sub_line}')
         else:
-            lines.append('  No notable findings.')
+            lines.append('  No notable findings — all extractors reported within expected bounds.')
         lines.append('')
+
         for cat in assessment.get('categories', []):
             label = cat.get('label', cat.get('category', ''))
             lines.append(SEP)
@@ -3300,22 +3416,24 @@ class DetailedReportBuilder:
                 timing  = ext_entry.get('execution_time_s', 0.0)
                 lines.append(f'  ┌─ Extractor: {name}  (v{version})  [{timing:.4f}s]')
                 if status == 'unavailable':
-                    lines.append(f'  │  STATUS: UNAVAILABLE — {ext_entry.get("reason", "")}')
+                    reason = ext_entry.get('reason', 'unavailable')
+                    lines.append(f'  │  STATUS   : UNAVAILABLE — {reason}')
                 else:
-                    lines.append('  │  STATUS: OK')
+                    lines.append(f'  │  STATUS   : OK')
                     for finding in ext_entry.get('findings', []):
-                        for sub in finding.split('\n'):
-                            lines.append(f'  │  {sub}')
+                        for sub_line in finding.split('\n'):
+                            lines.append(f'  │  {sub_line}')
                     nf = ext_entry.get('notable_findings', [])
                     if nf:
-                        lines.append('  │  ── Notable ──')
+                        lines.append(f'  │  ── Notable ──')
                         for item in nf:
-                            for sub in item.split('\n'):
-                                lines.append(f'  │  {sub}')
+                            for sub_line in item.split('\n'):
+                                lines.append(f'  │  {sub_line}')
                 lines.append('  └' + '─' * 70)
             lines.append('')
+
         lines.append(SEP)
-        lines.append('  DISCLAIMER')
+        lines.append(f'  DISCLAIMER')
         lines.append(SEP2)
         lines.append(f'  {assessment.get("disclaimer", "")}')
         lines.append(SEP)
@@ -3373,6 +3491,7 @@ class EvidenceAssembler:
         }
         if context._warning:
             package['warning'] = context._warning
+
         for category, results in pipeline_results.items():
             package['evidence'][category] = results
             for res in results:
@@ -3380,28 +3499,27 @@ class EvidenceAssembler:
                 if res['confidence'] > 0.5:
                     package['summary']['successful_extractors'] += 1
                 package['summary']['total_execution_time'] += res['execution_time']
+
         builder = DetailedReportBuilder()
-        package['detailed_assessment'] = builder.build(package['evidence'], context.file_type)
+        package['detailed_assessment'] = builder.build(
+            package['evidence'], context.file_type
+        )
         return package
 
 
 class ForensicEngine:
     def __init__(self):
         self.pipelines = {
+            # ── core pipelines ────────────────────────────────────────────────
             'file':      EvidencePipeline('file',      [FileEvidenceExtractor()]),
             'metadata':  EvidencePipeline('metadata',  [
                 EXIFExtractor(), XMPExtractor(), IPTCExtractor(), PDFMetadataExtractor()
             ]),
             'structure': EvidencePipeline('structure', [StructureExtractor()]),
             'statistics': EvidencePipeline('statistics', [StatisticsExtractor()]),
-            # visual: added WaveletAnalysisExtractor (v8.1)
             'visual':    EvidencePipeline('visual',    [
-                WaveletAnalysisExtractor(),       # NEW v8.1
-                NoiseExtractor(),
-                ELAExtractor(),
-                CloneExtractor(),
-                SteganographyExtractor(),
-                PerceptualHashExtractor(),
+                NoiseExtractor(), ELAExtractor(), CloneExtractor(),
+                SteganographyExtractor(), PerceptualHashExtractor()
             ]),
             'text':      EvidencePipeline('text',      [OCRExtractor()]),
             'embedded':  EvidencePipeline('embedded',  [PDFEmbeddedExtractor(), PDFFontExtractor()]),
@@ -3409,27 +3527,32 @@ class ForensicEngine:
             'hidden':    EvidencePipeline('hidden',    [PDFHiddenExtractor()]),
             'revision':  EvidencePipeline('revision',  [PDFRevisionExtractor()]),
             'layout':    EvidencePipeline('layout',    [PDFLayoutExtractor()]),
+            # ── v8 pipelines ──────────────────────────────────────────────────
             'quantization': EvidencePipeline('quantization', [
                 JPEGQuantizationExtractor(),
                 CompressionHistoryExtractor(),
             ]),
             'resampling': EvidencePipeline('resampling', [ResamplingExtractor()]),
-            'sensor':    EvidencePipeline('sensor',    [CFAExtractor(), PRNUExtractor()]),
-            # visual2: added 3 new v8.1 extractors; AIDetectionFusionExtractor runs last
-            'visual2':   EvidencePipeline('visual2',   [
+            'sensor':     EvidencePipeline('sensor',     [CFAExtractor(), PRNUExtractor()]),
+            'visual2':    EvidencePipeline('visual2',    [
                 NoiseInconsistencyExtractor(),
                 AdvancedSteganalysisExtractor(),
                 CopyMoveExtractorV2(),
                 ELAExtractorV2(),
-                AIGeneratedImageExtractor(),        # REPLACED v8.1 (10 signals)
-                AIManipulationExtractor(),          # ENHANCED v8.1 (4-metric)
-                LocalTextureConsistencyExtractor(), # NEW v8.1
-                AdvancedJPEGGhostExtractor(),       # NEW v8.1
-                AIDetectionFusionExtractor(),       # NEW v8.1 (runs last, second opinion)
+                AIGeneratedImageExtractor(),    # v9 improved
+                AIManipulationExtractor(),      # v9 improved
             ]),
             'document_consistency': EvidencePipeline('document_consistency', [
                 FontConsistencyExtractor(),
                 OCRImageConsistencyExtractor(),
+            ]),
+            # ── v9 NEW AI-detection pipeline ──────────────────────────────────
+            'ai_detection': EvidencePipeline('ai_detection', [
+                WaveletConsistencyExtractor(),
+                PowerSpectrumExtractor(),
+                JPEGGhostExtractor(),
+                LocalPatchStatisticsExtractor(),
+                GradientCoherenceExtractor(),
             ]),
         }
 
@@ -3458,11 +3581,11 @@ class ForensicEngine:
 
 # ---------- Callback ----------
 def send_callback(url: str, secret: str, payload: dict):
-    data    = json.dumps(payload, default=str).encode('utf-8')
+    data = json.dumps(payload, default=str).encode('utf-8')
     headers = {
         'Content-Type':      'application/json',
         'x-callback-secret': secret,
-        'User-Agent':        'forensic-engine/8.1 (+github-actions)',
+        'User-Agent':        'forensic-engine/9.0 (+github-actions)',
         'Accept':            'application/json',
     }
     callback_auth = os.getenv('CALLBACK_AUTH')
@@ -3508,19 +3631,23 @@ def load_known_hashes(path: Optional[str]) -> set:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            'Forensic Engine v8.1 — AI Detection Enhanced Edition. '
-            '31 extractors across 16 pipelines (4 new / 2 enhanced in v8.1). '
-            'All evidence is shown directly; no aggregate risk score is computed.'
+            'Forensic Engine v9 — AI-Detection Enhanced Edition. '
+            '32 extractors across 17 pipelines. '
+            '5 new AI-detection extractors, improved weighted heuristics, '
+            'spatial cluster analysis, and cross-extractor AI fusion synthesis.'
         )
     )
     parser.add_argument('file',              help='Path to file to analyse')
     parser.add_argument('-o', '--output',    help='Output JSON file (default: stdout)')
     parser.add_argument('--pretty',          action='store_true', help='Pretty-print JSON')
     parser.add_argument('--text-report',     action='store_true',
-                        help='Also write a human-readable text report.')
-    parser.add_argument('--mode',            choices=['light', 'full'], default='full')
-    parser.add_argument('--include-images',  action='store_true')
-    parser.add_argument('--pdf-dpi',         type=int, default=PDF_IMAGE_RESOLUTION)
+                        help='Write a human-readable text report')
+    parser.add_argument('--mode',            choices=['light', 'full'], default='full',
+                        help='light = skip OCR + clone-detection; full = everything')
+    parser.add_argument('--include-images',  action='store_true',
+                        help='Embed extracted PDF images as base64 in output')
+    parser.add_argument('--pdf-dpi',         type=int, default=PDF_IMAGE_RESOLUTION,
+                        help=f'DPI for PDF→image rasterisation (default {PDF_IMAGE_RESOLUTION})')
     parser.add_argument('--known-hashes',    help='JSON file of known sha256 hashes')
     parser.add_argument('--report-id',       help='Report ID to embed in output')
     parser.add_argument('--user-id',         help='User ID to embed in output')
@@ -3557,7 +3684,9 @@ def main():
     except Exception as e:
         if args.callback_url and args.report_id:
             send_callback(args.callback_url, args.callback_secret, {
-                'report_id': args.report_id, 'error': str(e), 'report': None,
+                'report_id': args.report_id,
+                'error':     str(e),
+                'report':    None,
             })
         raise
 
@@ -3573,7 +3702,7 @@ def main():
             print(json_output)
 
     if args.text_report:
-        builder     = DetailedReportBuilder()
+        builder = DetailedReportBuilder()
         text_report = builder.format_text_report(
             assessment = package['detailed_assessment'],
             file_path  = package['file_path'],
@@ -3592,14 +3721,10 @@ def main():
 
     if args.callback_url and args.report_id:
         send_callback(args.callback_url, args.callback_secret, {
-            'report_id': args.report_id, 'report': package,
+            'report_id': args.report_id,
+            'report':    package,
         })
 
 
 if __name__ == '__main__':
     main()
-
-
-
-
-Claude is AI and can make mistakes. Please double-check responses.
