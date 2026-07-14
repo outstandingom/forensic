@@ -4123,7 +4123,7 @@ def main() -> None:
                 "error":     f"File not found: {args.file}",
                 "report":    None,
             })
-        sys.exit(1)
+        sys.exit(0)
 
     options = RunOptions(
         mode           = args.mode,
