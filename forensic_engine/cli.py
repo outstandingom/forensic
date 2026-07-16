@@ -63,7 +63,11 @@ def main() -> NoReturn:
         if args.report_id: report["metadata"]["report_id"] = args.report_id
         if args.user_id: report["metadata"]["user_id"] = args.user_id
         
-        dispatch_webhook(report)
+        webhook_payload = {
+            "report_id": args.report_id or "unknown",
+            "report": report
+        }
+        dispatch_webhook(webhook_payload)
         
         if args.output:
             try:
@@ -79,7 +83,11 @@ def main() -> NoReturn:
             
         sys.exit(0)
 
-    dispatch_webhook(report)
+    webhook_payload = {
+        "report_id": args.report_id or report["metadata"].get("report_id", "unknown"),
+        "report": report
+    }
+    dispatch_webhook(webhook_payload)
 
     if args.output:
         try:
