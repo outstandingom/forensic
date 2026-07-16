@@ -144,15 +144,5 @@ jobs:
             echo "| User ID     | \`${{ github.event.inputs.user_id }}\` |"
             echo "| Mode        | ${{ github.event.inputs.mode }} |"
             echo "| Run ID      | ${{ github.run_id }} |"
-
-            if [ -f scan_report.json ]; then
-              RISK_LEVEL=$(python3 -c "import json,sys; d=json.load(open('scan_report.json')); print(d.get('risk_assessment',{}).get('risk_level','unknown'))")
-              RISK_SCORE=$(python3 -c "import json,sys; d=json.load(open('scan_report.json')); print(d.get('risk_assessment',{}).get('risk_score','?'))")
-              SUMMARY=$(python3 -c "import json,sys; d=json.load(open('scan_report.json')); print(d.get('risk_assessment',{}).get('explanation_summary',''))")
-              echo "| Risk Level  | **${RISK_LEVEL}** |"
-              echo "| Risk Score  | ${RISK_SCORE}/100 |"
-              echo ""
-              echo "### Summary"
-              echo "${SUMMARY}"
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
+
