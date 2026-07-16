@@ -365,7 +365,7 @@ class PDFLayoutExtractor(BaseExtractor):
 
     @staticmethod
     def applicable(context: ExtractionContext) -> bool:
-        return context.file_type == "pdf" and _PDFMINER_OK
+        return context.file_type == "pdf" and PDFMINER_OK
 
     def _extract(self, context: ExtractionContext) -> Dict[str, Any]:
         layout = context.get_pdf_text_with_positions()
@@ -517,7 +517,7 @@ class FontConsistencyExtractor(BaseExtractor):
 
     @staticmethod
     def applicable(context: ExtractionContext) -> bool:
-        return context.file_type == "pdf" and _PDFMINER_OK and np is not None
+        return context.file_type == "pdf" and PDFMINER_OK and np is not None
 
     def _extract(self, context: ExtractionContext) -> Dict[str, Any]:
         layout = context.get_pdf_text_with_positions()

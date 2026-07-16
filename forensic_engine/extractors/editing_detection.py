@@ -392,10 +392,10 @@ class ResamplingExtractor(BaseExtractor):
 
     @staticmethod
     def applicable(context: ExtractionContext) -> bool:
-        return (context.file_type == "image" and np is not None and _SCIPY_OK)
+        return (context.file_type == "image" and np is not None and SCIPY_OK)
 
     def _extract(self, context: ExtractionContext) -> Dict[str, Any]:
-        if not _SCIPY_OK:
+        if not SCIPY_OK:
             return {
                 "status": "unavailable", "summary": "SciPy not installed.",
                 "raw_measurements": {}, "evidence": {}, "supports": [], "contradicts": [],
@@ -491,7 +491,7 @@ class CompressionHistoryExtractor(BaseExtractor):
                 and cv2 is not None and np is not None)
 
     def _extract(self, context: ExtractionContext) -> Dict[str, Any]:
-        if not _SCIPY_OK:
+        if not SCIPY_OK:
             return {
                 "status": "unavailable", "summary": "SciPy not installed.",
                 "raw_measurements": {}, "evidence": {}, "supports": [], "contradicts": [],
@@ -552,7 +552,7 @@ class CompressionHistoryExtractor(BaseExtractor):
 
     @staticmethod
     def _periodicity_score(values: List[int]) -> float:
-        if len(values) < 16 or not _SCIPY_OK:
+        if len(values) < 16 or not SCIPY_OK:
             return 0.0
         arr      = np.array(values, dtype=np.float64) - np.mean(values)
         spectrum = np.abs(sp_fft.rfft(arr))

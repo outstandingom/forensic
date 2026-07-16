@@ -215,10 +215,10 @@ class PowerSpectrumExtractor(BaseExtractor):
 
     @staticmethod
     def applicable(context: ExtractionContext) -> bool:
-        return (context.file_type == "image" and np is not None and _SCIPY_OK)
+        return (context.file_type == "image" and np is not None and SCIPY_OK)
 
     def _extract(self, context: ExtractionContext) -> Dict[str, Any]:
-        if not _SCIPY_OK:
+        if not SCIPY_OK:
             return {
                 "status": "unavailable", "summary": "SciPy not installed.",
                 "raw_measurements": {}, "evidence": {}, "supports": [], "contradicts": [],
@@ -603,7 +603,7 @@ class AIGeneratedImageExtractor(BaseExtractor):
             return {"value": None, "threshold": 3.5, "threshold_exceeded": False, "description": str(e)}
 
     def _sig_power_spectrum(self, gray: 'Any') -> Dict:
-        if not _SCIPY_OK:
+        if not SCIPY_OK:
             return {"value": None, "threshold": [1.4,4.2], "threshold_exceeded": False,
                     "description": "SciPy unavailable"}
         try:
@@ -813,7 +813,7 @@ class AIManipulationExtractor(BaseExtractor):
         sr      = float(suspect.sum() / len(suspect))
         lc, tc  = 0, 0
         nr, nc  = len(rows_g), len(cols_g)
-        if nr * nc == len(suspect) and _SCIPY_OK:
+        if nr * nc == len(suspect) and SCIPY_OK:
             labeled, tc = ndimage.label(suspect.reshape(nr, nc))
             sizes       = [(labeled == i).sum() for i in range(1, tc + 1)]
             lc          = sum(1 for s in sizes if s >= 4)

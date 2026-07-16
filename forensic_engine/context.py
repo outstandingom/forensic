@@ -3,7 +3,7 @@ import io
 from typing import Optional, List, Dict, Any, Tuple
 
 from forensic_engine.dependencies import (
-    magic, pypdf, Image, pytesseract, convert_from_bytes, _PDFMINER_OK,
+    magic, pypdf, Image, pytesseract, convert_from_bytes, PDFMINER_OK,
     PDFResourceManager, LAParams, PDFPageAggregator, PDFPageInterpreter,
     PDFParser, PDFDocument, PDFPage, LTTextBox, LTTextLine, LTChar, LTRect
 )
@@ -121,7 +121,7 @@ class ExtractionContext:
         return self._pdf_images
 
     def get_pdf_text_with_positions(self):
-        if self._pdf_layout is None and self.file_type == "pdf" and _PDFMINER_OK:
+        if self._pdf_layout is None and self.file_type == "pdf" and PDFMINER_OK:
             try:
                 self._pdf_layout = self._extract_layout()
             except Exception:
@@ -129,7 +129,7 @@ class ExtractionContext:
         return self._pdf_layout if self._pdf_layout is not False else None
 
     def _extract_layout(self) -> Dict[str, Any]:
-        if not _PDFMINER_OK:
+        if not PDFMINER_OK:
             return {}
         layout_data: Dict[str, Any] = {"pages": [], "margins": {}}
         try:

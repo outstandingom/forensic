@@ -52,7 +52,32 @@ def main() -> NoReturn:
             
     except Exception as e:
         print(f"FATAL ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+        report = {
+            "metadata": {
+                "file_path": args.file,
+                "warnings": [f"Fatal engine error: {e}"]
+            },
+            "status": "failed",
+            "error_message": str(e)
+        }
+        if args.report_id: report["metadata"]["report_id"] = args.report_id
+        if args.user_id: report["metadata"]["user_id"] = args.user_id
+        
+        dispatch_webhook(report)
+        
+        if args.output:
+            try:
+                with open(args.output, "w", encoding="utf-8") as f:
+                    json.dump(report, f, indent=2 if args.pretty else None)
+            except:
+                pass
+                
+        if args.json:
+            print(json.dumps(report, indent=2 if args.pretty else None))
+        else:
+            print(f"FATAL ERROR: {e}")
+            
+        sys.exit(0)
 
     dispatch_webhook(report)
 

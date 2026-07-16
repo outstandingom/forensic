@@ -43,15 +43,15 @@ try:
 except ImportError:
     convert_from_bytes = None
 
-_SCIPY_OK = True
+SCIPY_OK = True
 try:
     from scipy import ndimage
     from scipy import fft as sp_fft
 except ImportError:
-    _SCIPY_OK = False
+    SCIPY_OK = False
     ndimage = sp_fft = None
 
-_PDFMINER_OK = True
+PDFMINER_OK = True
 try:
     from pdfminer.high_level import extract_text
     from pdfminer.layout import LTTextBox, LTTextLine, LTChar, LTRect
@@ -62,7 +62,7 @@ try:
     from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
     from pdfminer.layout import LAParams
 except ImportError:
-    _PDFMINER_OK = False
+    PDFMINER_OK = False
     extract_text = LTTextBox = LTTextLine = LTChar = LTRect = None
     PDFPageAggregator = PDFParser = PDFDocument = PDFPage = None
     PDFResourceManager = PDFPageInterpreter = LAParams = None
