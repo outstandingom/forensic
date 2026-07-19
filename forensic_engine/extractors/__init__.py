@@ -27,6 +27,9 @@ from forensic_engine.extractors.ai_indicators import (
 from forensic_engine.extractors.steganography import (
     SteganographyExtractor, AdvancedSteganalysisExtractor
 )
+from forensic_engine.extractors.content_extraction import (
+    FullTextExtractor, ContentBlockHasher, LinguisticProfiler
+)
 
 EXTRACTOR_REGISTRY: List[Type[BaseExtractor]] = [
     # File Integrity
@@ -48,7 +51,9 @@ EXTRACTOR_REGISTRY: List[Type[BaseExtractor]] = [
     LocalPatchStatisticsExtractor, GradientCoherenceExtractor,
     AIGeneratedImageExtractor, AIManipulationExtractor,
     # Steganography
-    SteganographyExtractor, AdvancedSteganalysisExtractor
+    SteganographyExtractor, AdvancedSteganalysisExtractor,
+    # Content Extraction (Advanced)
+    FullTextExtractor, ContentBlockHasher, LinguisticProfiler,
 ]
 
 def get_extractors_by_category() -> Dict[str, List[Type[BaseExtractor]]]:

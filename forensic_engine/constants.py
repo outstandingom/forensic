@@ -10,6 +10,7 @@ CATEGORY_AI_STATISTICAL = "ai_statistical_indicators"
 CATEGORY_DOCUMENT       = "document_forensics"
 CATEGORY_STEGANOGRAPHY  = "steganography"
 CATEGORY_FILE_INTEGRITY = "file_integrity"
+CATEGORY_CONTENT        = "content_extraction"
 
 RELIABILITY_HIGH   = "High"
 RELIABILITY_MEDIUM = "Medium"
@@ -22,4 +23,5 @@ CATEGORY_LABELS: Dict[str, str] = {
     CATEGORY_DOCUMENT:       "Document Forensics",
     CATEGORY_STEGANOGRAPHY:  "Steganography",
     CATEGORY_FILE_INTEGRITY: "File Integrity",
+    CATEGORY_CONTENT:        "Content Extraction",
 }
