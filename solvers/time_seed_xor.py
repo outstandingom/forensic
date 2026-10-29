@@ -18,11 +18,11 @@ import sys
 
 # --- CONFIG: adjust these to your challenge --------------------------------
 CIPHERTEXT = bytes.fromhex(
-    "deadbeef..."  # <-- replace with your challenge ciphertext (hex)
+    "00112233"  # <-- replace with your challenge ciphertext (hex)
 )
 
 # Approximate time the server was run / cipher was generated (epoch seconds).
-# If you don't know it, default to "now" and widen the window below.
+# If you don't know it, keep int(time.time()) and widen WINDOW below.
 APPROX_TS = int(time.time())
 
-#
+# ±
