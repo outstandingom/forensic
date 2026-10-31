@@ -6,6 +6,7 @@ import time
 import hashlib
 import zlib
 import re
+import zipfile
 from typing import Dict, Any, List, Optional, Tuple, ClassVar
 from collections import Counter
 
@@ -58,7 +59,44 @@ class SteganographyExtractor(BaseExtractor):
         lsb_susp   = len(lsb_bits) > 5_000 and chi2 < 0.5
         hidden_zip = detect_zip_header(context.raw_data)
 
+        # 1. Real LSB Byte Recovery & Flag Hunting
+        extracted_flags: List[str] = []
+        try:
+            if len(lsb_bits) >= 32:
+                byte_count = min(len(lsb_bits) // 8, 8192)
+                lsb_bytes = bytes([
+                    sum(lsb_bits[i*8 + b] << (7 - b) for b in range(8))
+                    for i in range(byte_count)
+                ])
+                lsb_text = lsb_bytes.decode("latin-1", errors="ignore")
+                found = re.findall(r"(?:flag|CTF|HQX|hackquest)\{[^}]+\}", lsb_text, re.IGNORECASE)
+                extracted_flags.extend(found)
+        except Exception:
+            pass
+
+        # 2. Real ZIP Carving and File Extraction
+        zip_files_found: List[str] = []
+        if hidden_zip:
+            try:
+                pk_offset = context.raw_data.find(b"PK\x03\x04")
+                if pk_offset != -1:
+                    zip_bytes = context.raw_data[pk_offset:]
+                    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+                        zip_files_found = zf.namelist()
+                        for name in zip_files_found:
+                            try:
+                                content = zf.read(name).decode("latin-1", errors="ignore")
+                                found_in_zip = re.findall(r"(?:flag|CTF|HQX|hackquest)\{[^}]+\}", content, re.IGNORECASE)
+                                extracted_flags.extend(found_in_zip)
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
         supports: List[str] = []
+        if extracted_flags:
+            unique_flags = list(set(extracted_flags))
+            supports.append(f"FLAG DISCOVERED IN STEGANOGRAPHY: {', '.join(unique_flags)}")
         if lsb_susp:
             supports.append(
                 f"LSB chi-square {chi2:.4f} < 0.5 with {len(lsb_bits):,} bits — "
@@ -71,20 +109,23 @@ class SteganographyExtractor(BaseExtractor):
             )
         if hidden_zip:
             supports.append(
-                "ZIP signature in raw bytes — may indicate a polyglot file or "
-                "hidden archive appended to the image data."
+                f"ZIP signature in raw bytes at PK offset — carved {len(zip_files_found)} files: {', '.join(zip_files_found[:5])}"
             )
+
+        unique_extracted = list(set(extracted_flags))
         return {
             "status":  "ok",
-            "summary": f"LSB: {len(lsb_bits):,} bits, chi2={chi2:.4f}, zip={hidden_zip}.",
+            "summary": f"LSB: {len(lsb_bits):,} bits, chi2={chi2:.4f}, flags_found={len(unique_extracted)}, zip={hidden_zip}.",
             "raw_measurements": {
                 "lsb_bits_sampled": len(lsb_bits), "lsb_ones_ratio": ones_ratio,
                 "lsb_chi_square": chi2, "chi2_below_0.5": lsb_susp, "hidden_zip": hidden_zip,
+                "flags_found": unique_extracted, "carved_zip_files": zip_files_found
             },
             "evidence": {
                 "lsb_bits_sampled": len(lsb_bits), "lsb_ones_ratio": ones_ratio,
                 "lsb_chi_square": chi2, "chi_square_threshold": 0.5,
                 "chi2_below_threshold": lsb_susp, "hidden_zip_signature": hidden_zip,
+                "flags_found": unique_extracted, "carved_zip_files": zip_files_found
             },
             "supports":    supports,
             "contradicts": [],
