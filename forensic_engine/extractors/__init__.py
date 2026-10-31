@@ -30,6 +30,9 @@ from forensic_engine.extractors.steganography import (
 from forensic_engine.extractors.content_extraction import (
     FullTextExtractor, ContentBlockHasher, LinguisticProfiler
 )
+from forensic_engine.extractors.pcap_analyzer import (
+    PCAPNetworkExtractor
+)
 
 EXTRACTOR_REGISTRY: List[Type[BaseExtractor]] = [
     # File Integrity
@@ -52,6 +55,8 @@ EXTRACTOR_REGISTRY: List[Type[BaseExtractor]] = [
     AIGeneratedImageExtractor, AIManipulationExtractor,
     # Steganography
     SteganographyExtractor, AdvancedSteganalysisExtractor,
+    # Network Forensics (CTF PCAP / PCAPNG Dissection)
+    PCAPNetworkExtractor,
     # Content Extraction (Advanced)
     FullTextExtractor, ContentBlockHasher, LinguisticProfiler,
 ]
